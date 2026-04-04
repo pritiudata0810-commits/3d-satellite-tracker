@@ -8,7 +8,6 @@ export function calculatePositions(tleArray) {
     try {
       const satrec = satellite.twoline2satrec(sat.TLE_LINE1, sat.TLE_LINE2)
       const posVel = satellite.propagate(satrec, now)
-
       if (!posVel || !posVel.position) return
 
       const gmst = satellite.gstime(now)
@@ -16,19 +15,20 @@ export function calculatePositions(tleArray) {
 
       const lat = satellite.degreesLat(geo.latitude)
       const lng = satellite.degreesLong(geo.longitude)
-      const alt = geo.height / 6371
+      const altKm = geo.height
+      const inclination = satrec.inclo * (180 / Math.PI)
 
-      if (isNaN(lat) || isNaN(lng) || alt < 0) return
+      if (isNaN(lat) || isNaN(lng) || altKm < 0) return
 
       positions.push({
         name: sat.OBJECT_NAME,
         lat,
         lng,
-        alt,
+        alt: altKm / 6371,
+        altKm: Math.round(altKm),
+        inclination: Math.round(inclination * 10) / 10,
       })
-    } catch (e) {
-      // skip
-    }
+    } catch (e) { }
   })
 
   return positions
