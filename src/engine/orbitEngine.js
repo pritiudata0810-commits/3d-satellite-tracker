@@ -1,6 +1,8 @@
 import * as satellite from 'satellite.js'
 
 export function calculatePositions(tleArray) {
+  if (!tleArray || !Array.isArray(tleArray)) return []
+  
   const now = new Date()
   const positions = []
 
@@ -20,15 +22,18 @@ export function calculatePositions(tleArray) {
 
       if (isNaN(lat) || isNaN(lng) || altKm < 0) return
 
+      // Alt needs to be mapped to Earth radii for Three.js Globe scaling
       positions.push({
         name: sat.OBJECT_NAME,
         constellation: sat.CONSTELLATION || 'Other',
         lat, lng,
-        alt: altKm / 6371,
+        alt: altKm / 6371, 
         altKm: Math.round(altKm),
         inclination: Math.round(inclination * 10) / 10,
       })
-    } catch (e) {}
+    } catch (e) {
+      // Silently ignore corrupted TLE strings
+    }
   })
 
   return positions

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Globe from 'globe.gl'
 import axios from 'axios'
-import * as THREE from 'three'
 import { calculatePositions } from '../engine/orbitEngine'
 
 const MODES = {
@@ -65,18 +64,17 @@ const MODES = {
 
 const CONSTELLATIONS = ['All', 'Starlink', 'GPS', 'GLONASS', 'OneWeb', 'Iridium', 'ISS', 'Other']
 
-// Exact toolbar matching satellitemap.space
 const TOOLBAR = [
   { id: 'home',    icon: '⌂',  tip: 'Home',        toggle: false },
   { id: 'rotate',  icon: '↻',  tip: 'Auto Rotate', toggle: true,  def: true  },
   { id: 'grid',    icon: '⊞',  tip: 'Grid Lines',  toggle: true,  def: true  },
   { id: 'borders', icon: '🗺', tip: 'Borders',      toggle: true,  def: true  },
   { id: 'atmo',    icon: '◎',  tip: 'Atmosphere',  toggle: true,  def: true  },
-  { id: 'stars',   icon: '✦',  tip: 'Stars',        toggle: true,  def: true  },
+  { id: 'stars',   icon: '✦',  tip: 'Stars',       toggle: true,  def: true  },
   { id: 'sun',     icon: '☀',  tip: 'Sun Lighting', toggle: true,  def: false },
   { id: 'clouds',  icon: '☁',  tip: 'Clouds',       toggle: true,  def: false },
   { id: 'dish',    icon: '📡', tip: 'Constellations', toggle: false },
-  { id: 'fps30',   icon: '30',  tip: 'FPS',          toggle: true,  def: true, isText: true },
+  { id: 'fps30',   icon: '30', tip: 'FPS',          toggle: true,  def: true, isText: true },
 ]
 
 export default function GlobeView() {
@@ -85,7 +83,7 @@ export default function GlobeView() {
   const tleRef        = useRef([])
   const posRef        = useRef([])
   const modeRef       = useRef('inclination')
-  const constellRef   = useRef('All')           // ← ref fixes stale closure bug
+  const constellRef   = useRef('All')
   const countriesRef  = useRef([])
   const fpsRef        = useRef({ frames: 0, last: performance.now() })
 
@@ -103,7 +101,6 @@ export default function GlobeView() {
   )
   const [dist, setDist] = useState({ Low: 0, Medium: 0, High: 0 })
 
-  // UTC clock
   useEffect(() => {
     const t = setInterval(() => {
       const n   = new Date()
@@ -129,9 +126,11 @@ export default function GlobeView() {
       tleRef.current = res.data
       setLoading(false)
       console.log('✅ Loaded:', res.data.length, 'satellites')
+      return res.data
     } catch (e) {
       console.error('TLE fetch failed', e)
       setLoading(false)
+      return []
     }
   }
 
@@ -148,59 +147,54 @@ export default function GlobeView() {
     const filtered = currentConst === 'All'
       ? positions
       : positions.filter(p => p.constellation === currentConst)
+    
     const colored = filtered.map(p => ({
       ...p,
       color: MODES[currentMode]?.color(p) || '#ff8c00',
     }))
+    
     setCount(filtered.length)
     computeDist(filtered)
-    globeRef.current?.customLayerData(colored)
+    
+    // Switch from custom objects to highly optimized points
+    if (globeRef.current) {
+      globeRef.current.pointsData(colored)
+    }
   }
 
-  // Globe init
   useEffect(() => {
     const globe = Globe()(containerRef.current)
-      .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
+      .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-dark.jpg') // Dark aesthetic
       .backgroundImageUrl('https://unpkg.com/three-globe/example/img/night-sky.png')
       .width(window.innerWidth)
-      .height(window.innerHeight - 48 - 56)    // account for top nav + bottom bar
+      .height(window.innerHeight - 48 - 56)
       .showAtmosphere(true)
-      .atmosphereColor('#1a7fc4')
-      .atmosphereAltitude(0.18)
+      .atmosphereColor('#002244')
+      .atmosphereAltitude(0.15)
       .showGraticules(true)
       .polygonsData([])
-      .polygonCapColor(() => 'rgba(0,0,0,0)')
-      .polygonSideColor(() => 'rgba(80,140,255,0.06)')
-      .polygonStrokeColor(() => 'rgba(120,180,255,0.25)')
-      .polygonAltitude(0.001)
-      .customLayerData([])
-      .customThreeObject(d => {
-        const geo = new THREE.SphereGeometry(0.9, 8, 8)
-        const mat = new THREE.MeshBasicMaterial({ color: d.color || '#ff8c00' })
-        return new THREE.Mesh(geo, mat)
-      })
-      .customThreeObjectUpdate((obj, d) => {
-        obj.material.color.set(d.color || '#ff8c00')
-        Object.assign(obj.position, globe.getCoords(d.lat, d.lng, d.alt))
-      })
-      .onCustomLayerClick(d => setSelected(d))
+      .polygonCapColor(() => 'rgba(0,0,0,0.4)') // Dark oceans/land
+      .polygonSideColor(() => 'rgba(0,0,0,0)')
+      .polygonStrokeColor(() => 'rgba(80,140,255,0.3)') // Crisp blue borders
+      .polygonAltitude(0.005)
+      // Optimized rendering for thousands of dots
+      .pointLat('lat')
+      .pointLng('lng')
+      .pointAltitude('alt')
+      .pointColor('color')
+      .pointRadius(0.015) // Tiny points exactly like the image
+      .pointResolution(8)
+      .onPointClick(d => setSelected(d))
 
     globeRef.current = globe
     globe.controls().autoRotate      = true
     globe.controls().autoRotateSpeed = 0.3
-
-    // Brightness boost via renderer
-    try {
-      const renderer = globe.renderer()
-      if (renderer) renderer.toneMappingExposure = 1.6
-    } catch (e) {}
 
     window.addEventListener('resize', () => {
       globe.width(window.innerWidth)
       globe.height(window.innerHeight - 48 - 56)
     })
 
-    // FPS counter
     const countFps = (now) => {
       fpsRef.current.frames++
       if (now - fpsRef.current.last >= 1000) {
@@ -213,12 +207,19 @@ export default function GlobeView() {
     requestAnimationFrame(countFps)
 
     fetchCountries()
-    fetchTLEs().then(() => {
+    
+    // Force immediate first calculation to fix the "0 satellites" bug
+    fetchTLEs().then((data) => {
+      if (!data || data.length === 0) return
+      
+      const initialPositions = calculatePositions(data)
+      posRef.current = initialPositions
+      applyFilter(initialPositions, modeRef.current, constellRef.current)
+
       setInterval(() => {
         if (!tleRef.current.length) return
         const positions = calculatePositions(tleRef.current)
         posRef.current  = positions
-        // Use refs to avoid stale closures ↓
         applyFilter(positions, modeRef.current, constellRef.current)
       }, 1000)
     })
@@ -238,7 +239,7 @@ export default function GlobeView() {
     if (id === 'sun') {
       g.globeImageUrl(newVal
         ? 'https://unpkg.com/three-globe/example/img/earth-day.jpg'
-        : 'https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
+        : 'https://unpkg.com/three-globe/example/img/earth-dark.jpg')
     }
   }
 
@@ -251,7 +252,7 @@ export default function GlobeView() {
 
   const handleConstellation = (c) => {
     setConstellation(c)
-    constellRef.current = c    // ← update ref so interval picks it up
+    constellRef.current = c
     setActiveMenu(null)
     applyFilter(posRef.current, modeRef.current, c)
   }
@@ -259,6 +260,8 @@ export default function GlobeView() {
   const legend = MODES[mode]
   const total  = count || 1
 
+  // Note: The UI JSX (<div> structure) remains exactly the same as your original file.
+  // Paste your entire return ( <div style={{ width: '100vw', height: '100vh', ... ) block here.
   return (
     <div
       style={{ width: '100vw', height: '100vh', background: '#000', overflow: 'hidden', fontFamily: 'system-ui, sans-serif' }}
@@ -272,15 +275,13 @@ export default function GlobeView() {
         backdropFilter: 'blur(14px)',
         display: 'flex', alignItems: 'center', zIndex: 200,
       }}>
-        {/* Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '0 18px', borderRight: '1px solid rgba(255,255,255,0.08)', height: '100%' }}>
           <span style={{ fontSize: 18 }}>🛰️</span>
           <span style={{ fontSize: 13, fontWeight: 700, color: '#fff', letterSpacing: 0.4 }}>3D Satellite Tracker</span>
         </div>
 
-        {/* Dropdown menus */}
         {[
-          { label: 'Constellations', items: CONSTELLATIONS,                   handler: handleConstellation },
+          { label: 'Constellations', items: CONSTELLATIONS,                 handler: handleConstellation },
           { label: 'Color Mode',     items: Object.entries(MODES).map(([k,v]) => ({ key: k, label: v.label })), handler: (k) => handleModeChange(k) },
           { label: 'Types' },
           { label: 'Functions' },
@@ -329,7 +330,6 @@ export default function GlobeView() {
           </div>
         ))}
 
-        {/* Right: Share / Install / Live dot */}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12, paddingRight: 20 }}>
           {['Share', 'Install'].map(lbl => (
             <button key={lbl} style={{
@@ -386,7 +386,6 @@ export default function GlobeView() {
           </div>
         ))}
 
-        {/* Distribution */}
         <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', marginTop: 16, paddingTop: 14 }}>
           <div style={{ fontSize: 10, opacity: 0.35, marginBottom: 10, letterSpacing: 1 }}>
             DISTRIBUTION ({count.toLocaleString()} satellites)
@@ -405,7 +404,6 @@ export default function GlobeView() {
           ))}
         </div>
 
-        {/* Color mode switcher */}
         <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', marginTop: 14, paddingTop: 14 }}>
           <div style={{ fontSize: 10, opacity: 0.35, marginBottom: 10, letterSpacing: 1 }}>COLOR MODE</div>
           {Object.entries(MODES).map(([key, val]) => (
@@ -419,7 +417,6 @@ export default function GlobeView() {
           ))}
         </div>
 
-        {/* ◀ = ▶ nav arrows */}
         <div style={{ display: 'flex', gap: 6, marginTop: 14 }}>
           {['◀', '=', '▶'].map((sym, i) => (
             <button key={i} style={{
@@ -443,7 +440,6 @@ export default function GlobeView() {
         backdropFilter: 'blur(14px)',
         display: 'flex', alignItems: 'center', padding: '0 16px', zIndex: 200,
       }}>
-        {/* Icon buttons */}
         <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
           {TOOLBAR.map(btn => {
             const isOn = btn.toggle ? toggles[btn.id] : false
@@ -471,7 +467,6 @@ export default function GlobeView() {
                 >
                   {btn.icon}
                 </button>
-                {/* Tooltip */}
                 {tooltip === btn.id && (
                   <div style={{
                     position: 'absolute', bottom: 50, left: '50%',
@@ -492,12 +487,10 @@ export default function GlobeView() {
           })}
         </div>
 
-        {/* Center: Clouds status */}
         <div style={{ flex: 1, textAlign: 'center', fontSize: 11, color: 'rgba(255,255,255,0.25)', letterSpacing: 1 }}>
           {toggles.clouds ? 'CLOUDS ON' : 'CLOUDS OFF'}
         </div>
 
-        {/* Right: FPS chip + UTC */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <div style={{
             background: 'rgba(255,255,255,0.06)',
@@ -515,7 +508,6 @@ export default function GlobeView() {
         </div>
       </div>
 
-      {/* ── SATELLITE CLICK POPUP ───────────────────────────────── */}
       {selected && (
         <div style={{
           position: 'fixed', top: '50%', left: '50%',

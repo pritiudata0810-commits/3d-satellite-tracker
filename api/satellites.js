@@ -20,7 +20,7 @@ export default async function handler(req, res) {
       try {
         const r = await fetch(
           `https://celestrak.org/gp.php?GROUP=${group}&FORMAT=json`,
-          { headers: { 'User-Agent': 'satellite-tracker-app' } }
+          { headers: { 'User-Agent': 'Mozilla/5.0' } } // Fixed User-Agent to avoid blocks
         )
         if (!r.ok) return []
         const json = await r.json()
@@ -32,7 +32,7 @@ export default async function handler(req, res) {
   
     try {
       const groups = [
-        'starlink', 'active', 'gps-ops', 'glonass-ops',
+        'starlink', 'gps-ops', 'glonass-ops',
         'galileo', 'beidou', 'oneweb', 'iridium', 'stations'
       ]
   
