@@ -11,9 +11,7 @@ export default function GlobeView() {
 
   async function fetchTLEs() {
     try {
-      const res = await axios.get(
-        'https://corsproxy.io/?https://celestrak.org/gp.php?GROUP=starlink&FORMAT=json'
-      )
+      const res = await axios.get('/api/satellites?group=starlink')
       tleRef.current = res.data
       setCount(res.data.length)
       console.log('Fetched satellites:', res.data.length)
