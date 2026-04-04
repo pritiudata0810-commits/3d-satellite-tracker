@@ -26,7 +26,7 @@ export function calculatePositions(tleArray) {
         alt: geo.height / 6371,
       })
     } catch (e) {
-      // skip bad satellites
+      // skip
     }
   })
 
