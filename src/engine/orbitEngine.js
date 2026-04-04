@@ -1,4 +1,4 @@
-import * as satellite from 'satellite.js'
+import satellite from 'satellite.js'
 
 export function calculatePositions(tleArray) {
   const now = new Date()
@@ -9,15 +9,20 @@ export function calculatePositions(tleArray) {
       const satrec = satellite.twoline2satrec(sat.TLE_LINE1, sat.TLE_LINE2)
       const posVel = satellite.propagate(satrec, now)
 
-      if (!posVel.position) return
+      if (!posVel || !posVel.position) return
 
       const gmst = satellite.gstime(now)
       const geo = satellite.eciToGeodetic(posVel.position, gmst)
 
+      const lat = satellite.degreesLat(geo.latitude)
+      const lng = satellite.degreesLong(geo.longitude)
+
+      if (isNaN(lat) || isNaN(lng)) return
+
       positions.push({
         name: sat.OBJECT_NAME,
-        lat: satellite.degreesLat(geo.latitude),
-        lng: satellite.degreesLong(geo.longitude),
+        lat: lat,
+        lng: lng,
         alt: geo.height / 6371,
       })
     } catch (e) {
