@@ -22,16 +22,17 @@ export default function GlobeView() {
 
   useEffect(() => {
     const globe = Globe()(containerRef.current)
-      .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
+      .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-night.jpg')
       .backgroundImageUrl('https://unpkg.com/three-globe/example/img/night-sky.png')
       .width(window.innerWidth)
       .height(window.innerHeight)
       .pointsData([])
       .pointLat('lat')
       .pointLng('lng')
-      .pointAltitude('alt')
+      .pointAltitude(0.01)
       .pointColor(() => 'orange')
-      .pointRadius(0.3)
+      .pointRadius(0.15)
+      .pointResolution(4)
 
     globeRef.current = globe
     globe.controls().autoRotate = true

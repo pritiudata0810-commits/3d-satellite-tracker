@@ -23,7 +23,7 @@ export function calculatePositions(tleArray) {
         name: sat.OBJECT_NAME,
         lat: lat,
         lng: lng,
-        alt: geo.height / 6371,
+        alt: 0.01,
       })
     } catch (e) {
       // skip
