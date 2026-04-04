@@ -22,13 +22,13 @@ export function calculatePositions(tleArray) {
 
       positions.push({
         name: sat.OBJECT_NAME,
-        lat,
-        lng,
+        constellation: sat.CONSTELLATION || 'Other',
+        lat, lng,
         alt: altKm / 6371,
         altKm: Math.round(altKm),
         inclination: Math.round(inclination * 10) / 10,
       })
-    } catch (e) { }
+    } catch (e) {}
   })
 
   return positions
