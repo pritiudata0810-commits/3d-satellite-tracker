@@ -16,14 +16,15 @@ export function calculatePositions(tleArray) {
 
       const lat = satellite.degreesLat(geo.latitude)
       const lng = satellite.degreesLong(geo.longitude)
+      const alt = geo.height / 6371
 
-      if (isNaN(lat) || isNaN(lng)) return
+      if (isNaN(lat) || isNaN(lng) || alt < 0) return
 
       positions.push({
         name: sat.OBJECT_NAME,
-        lat: lat,
-        lng: lng,
-        alt: 0.01,
+        lat,
+        lng,
+        alt,
       })
     } catch (e) {
       // skip

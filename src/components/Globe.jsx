@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Globe from 'globe.gl'
 import axios from 'axios'
+import * as THREE from 'three'
 import { calculatePositions } from '../engine/orbitEngine'
 
 export default function GlobeView() {
@@ -14,7 +15,6 @@ export default function GlobeView() {
       const res = await axios.get('/api/satellites?group=starlink')
       tleRef.current = res.data
       setCount(res.data.length)
-      console.log('Fetched satellites:', res.data.length)
     } catch (e) {
       console.error('TLE fetch failed', e)
     }
@@ -26,13 +26,18 @@ export default function GlobeView() {
       .backgroundImageUrl('https://unpkg.com/three-globe/example/img/night-sky.png')
       .width(window.innerWidth)
       .height(window.innerHeight)
-      .pointsData([])
-      .pointLat('lat')
-      .pointLng('lng')
-      .pointAltitude(0.01)
-      .pointColor(() => 'orange')
-      .pointRadius(0.15)
-      .pointResolution(4)
+      .customLayerData([])
+      .customThreeObject(() => {
+        const geometry = new THREE.SphereGeometry(0.4, 4, 4)
+        const material = new THREE.MeshBasicMaterial({ color: 'orange' })
+        return new THREE.Mesh(geometry, material)
+      })
+      .customThreeObjectUpdate((obj, d) => {
+        Object.assign(
+          obj.position,
+          globe.getCoords(d.lat, d.lng, d.alt)
+        )
+      })
 
     globeRef.current = globe
     globe.controls().autoRotate = true
@@ -47,7 +52,7 @@ export default function GlobeView() {
       setInterval(() => {
         if (tleRef.current.length === 0) return
         const positions = calculatePositions(tleRef.current)
-        globeRef.current.pointsData(positions)
+        globeRef.current.customLayerData(positions)
       }, 1000)
     })
 
