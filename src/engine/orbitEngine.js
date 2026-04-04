@@ -1,4 +1,4 @@
-import satellite from 'satellite.js'
+import * as satellite from 'satellite.js'
 
 export function calculatePositions(tleArray) {
   const now = new Date()
