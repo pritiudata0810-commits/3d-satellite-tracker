@@ -4,45 +4,26 @@ import axios from 'axios'
 import * as THREE from 'three'
 import { calculatePositions, inclinationHistogram } from '../engine/orbitEngine'
 
-const BOUNDARIES_URL =
-  'https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@v4.0.0/geojson/ne_110m_admin_0_boundary_lines_land.geojson'
+const COUNTRIES_URL =
+  'https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@v4.0.0/geojson/ne_50m_admin_0_countries.geojson'
 
-const MODES = {
-  inclination: {
-    label: 'Inclination',
-    color: (s) => {
-      if (s.inclination < 30) return '#e63946'
-      if (s.inclination < 60) return '#ff8c00'
-      if (s.inclination < 90) return '#ffd700'
-      if (s.inclination < 120) return '#2ecc40'
-      return '#4488ff'
-    },
-    legend: [
-      { c: '#e63946', label: 'Equatorial', range: '0° - 30°' },
-      { c: '#ff8c00', label: 'Low', range: '30° - 60°' },
-      { c: '#ffd700', label: 'Medium', range: '60° - 90°' },
-      { c: '#2ecc40', label: 'High', range: '90° - 120°' },
-      { c: '#4488ff', label: 'Retrograde', range: '120° - 180°' },
-    ],
-  },
-  altitude: {
-    label: 'Orbital Altitude',
-    color: (s) => {
-      if (s.altKm < 400) return '#e63946'
-      if (s.altKm < 1000) return '#ff8c00'
-      if (s.altKm < 2000) return '#ffd700'
-      if (s.altKm < 35786) return '#2ecc40'
-      return '#8844ff'
-    },
-    legend: [
-      { c: '#e63946', label: 'VLEO', range: '< 400 km' },
-      { c: '#ff8c00', label: 'LEO', range: '400–1000 km' },
-      { c: '#ffd700', label: 'MEO', range: '1000–2000 km' },
-      { c: '#2ecc40', label: 'HEO', range: '2000–35786 km' },
-      { c: '#8844ff', label: 'GEO+', range: '35786+ km' },
-    ],
-  },
+const INCLINATION_BANDS = [
+  { key: 'equatorial', c: '#e63946', label: 'Equatorial', range: '0° – 30°' },
+  { key: 'low', c: '#ff8c00', label: 'Low', range: '30° – 60°' },
+  { key: 'medium', c: '#ffd700', label: 'Medium', range: '60° – 90°' },
+  { key: 'high', c: '#2ecc40', label: 'High', range: '90° – 120°' },
+  { key: 'retrograde', c: '#4488ff', label: 'Retrograde', range: '120° – 180°' },
+]
+
+function inclinationColor(s) {
+  if (s.inclination < 30) return '#e63946'
+  if (s.inclination < 60) return '#ff8c00'
+  if (s.inclination < 90) return '#ffd700'
+  if (s.inclination < 120) return '#2ecc40'
+  return '#4488ff'
 }
+
+const SIDE_PANEL_SLIDE_COUNT = 3
 
 const btnPlayback = {
   width: 32,
@@ -64,16 +45,18 @@ const NAV_LINKS = [
   { key: 'more', label: 'More', items: ['API', 'Contact'] },
 ]
 
-function boundaryGeoToPaths(geojson, alt = 0.0045) {
+/** Full country outlines (coast + land borders) from admin-0 polygons — outer rings only. */
+function countryOutlinesToPaths(geojson, alt = 0.003) {
   const paths = []
   for (const f of geojson.features || []) {
+    if (f.properties?.ISO_A2 === 'AQ') continue
     const g = f.geometry
     if (!g) continue
-    if (g.type === 'LineString') {
-      paths.push(g.coordinates.map(([lng, lat]) => [lat, lng, alt]))
-    } else if (g.type === 'MultiLineString') {
-      for (const line of g.coordinates) {
-        paths.push(line.map(([lng, lat]) => [lat, lng, alt]))
+    if (g.type === 'Polygon' && g.coordinates[0]?.length) {
+      paths.push(g.coordinates[0].map(([lng, lat]) => [lat, lng, alt]))
+    } else if (g.type === 'MultiPolygon') {
+      for (const poly of g.coordinates) {
+        if (poly[0]?.length) paths.push(poly[0].map(([lng, lat]) => [lat, lng, alt]))
       }
     }
   }
@@ -96,12 +79,11 @@ export default function GlobeView() {
   const globeRef = useRef(null)
   const tleRef = useRef([])
   const posRef = useRef([])
-  const modeRef = useRef('inclination')
   const simTimeRef = useRef(new Date())
   const animPausedRef = useRef(false)
 
   const [count, setCount] = useState(0)
-  const [mode, setMode] = useState('inclination')
+  const [sidePanelSlide, setSidePanelSlide] = useState(0)
   const [utcStr, setUtcStr] = useState('')
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(null)
@@ -113,21 +95,6 @@ export default function GlobeView() {
   const [hist, setHist] = useState(null)
   const cloudsOn = false
   const [dataSource, setDataSource] = useState('')
-
-  const handleModeChange = useCallback((newMode) => {
-    setMode(newMode)
-    modeRef.current = newMode
-    if (!posRef.current.length || !globeRef.current) return
-    const colored = posRef.current.map((p) => ({
-      ...p,
-      color: MODES[newMode].color(p),
-    }))
-    globeRef.current.customLayerData(colored)
-  }, [])
-
-  useEffect(() => {
-    modeRef.current = mode
-  }, [mode])
 
   useEffect(() => {
     animPausedRef.current = animPaused
@@ -194,14 +161,14 @@ export default function GlobeView() {
     }
     window.addEventListener('resize', onResize)
 
-    fetch(BOUNDARIES_URL)
+    fetch(COUNTRIES_URL)
       .then((r) => r.json())
       .then((geo) => {
-        const paths = boundaryGeoToPaths(geo, 0.0045)
+        const paths = countryOutlinesToPaths(geo, 0.003)
         globe
           .pathsData(paths)
-          .pathColor(() => 'rgba(255,255,255,0.95)')
-          .pathStroke(1.15)
+          .pathColor(() => 'rgba(255,255,255,0.62)')
+          .pathStroke(0.35)
       })
       .catch(() => {})
 
@@ -213,10 +180,9 @@ export default function GlobeView() {
       if (!animPausedRef.current) simTimeRef.current = new Date()
       const positions = calculatePositions(tleRef.current, when)
       posRef.current = positions
-      const m = modeRef.current
       const colored = positions.map((p) => ({
         ...p,
-        color: MODES[m]?.color(p) || '#ff8c00',
+        color: inclinationColor(p),
       }))
       globeRef.current.customLayerData(colored)
       setHist(inclinationHistogram(positions))
@@ -273,25 +239,26 @@ export default function GlobeView() {
     if (!tleRef.current.length || !globeRef.current) return
     const positions = calculatePositions(tleRef.current, simTimeRef.current)
     posRef.current = positions
-    const m = modeRef.current
     const colored = positions.map((p) => ({
       ...p,
-      color: MODES[m]?.color(p) || '#ff8c00',
+      color: inclinationColor(p),
     }))
     globeRef.current.customLayerData(colored)
     setHist(inclinationHistogram(positions))
   }
 
-  const currentMode = MODES[mode]
-  const bucketRows = hist
-    ? [
-        { key: 'equatorial', label: 'Equatorial', n: hist.buckets.equatorial },
-        { key: 'low', label: 'Low', n: hist.buckets.low },
-        { key: 'medium', label: 'Medium', n: hist.buckets.medium },
-        { key: 'high', label: 'High', n: hist.buckets.high },
-        { key: 'retrograde', label: 'Retrograde', n: hist.buckets.retrograde },
-      ]
-    : []
+  const bucketN = (key) => (hist ? hist.buckets[key] ?? 0 : 0)
+  const bucketPct = (key) => (hist ? hist.pct(bucketN(key)) : '0.0')
+
+  const lmhRows = [
+    { key: 'low', c: '#ff8c00', label: 'Low', range: '30° – 60°' },
+    { key: 'medium', c: '#ffd700', label: 'Medium', range: '60° – 90°' },
+    { key: 'high', c: '#2ecc40', label: 'High', range: '90° – 120°' },
+  ]
+  const erRows = [
+    { key: 'equatorial', c: '#e63946', label: 'Equatorial', range: '0° – 30°' },
+    { key: 'retrograde', c: '#4488ff', label: 'Retrograde', range: '120° – 180°' },
+  ]
 
   return (
     <div className="globe-app" style={{ width: '100vw', height: '100vh', background: '#000', overflow: 'hidden' }}>
@@ -313,18 +280,17 @@ export default function GlobeView() {
           pointerEvents: 'none',
         }}
       >
-        <div style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'baseline', gap: 10 }}>
+        <div style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
           <div
             style={{
               fontFamily: "'Segoe UI', system-ui, sans-serif",
               fontWeight: 800,
-              fontSize: 17,
-              letterSpacing: 0.2,
+              fontSize: 16,
+              letterSpacing: 0.4,
+              color: '#fff',
             }}
           >
-            <span style={{ color: '#5af' }}>satellite</span>
-            <span style={{ color: '#fff' }}>map</span>
-            <span style={{ color: 'rgba(255,255,255,0.55)', fontWeight: 600 }}>.space</span>
+            3D Satellite Tracker
           </div>
         </div>
 
@@ -433,16 +399,16 @@ export default function GlobeView() {
       >
         <div
           style={{
-            fontSize: 42,
-            fontWeight: 900,
-            opacity: 0.18,
-            letterSpacing: 2,
-            textTransform: 'lowercase',
+            fontSize: 36,
+            fontWeight: 800,
+            opacity: 0.2,
+            letterSpacing: 1,
             color: '#fff',
-            lineHeight: 1,
+            lineHeight: 1.1,
+            maxWidth: 320,
           }}
         >
-          live catalog
+          3D Satellite Tracker
         </div>
         <div style={{ fontSize: 12, opacity: 0.55, marginTop: 6, color: '#fff' }}>
           {loading ? 'Loading ephemeris…' : `${count.toLocaleString()} satellites`}
@@ -506,97 +472,175 @@ export default function GlobeView() {
             boxShadow: '-8px 0 32px rgba(0,0,0,0.4)',
           }}
         >
-          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 12, opacity: 0.92, letterSpacing: 1.2 }}>
-            {currentMode.label}
-          </div>
-
-          {currentMode.legend.map((item) => (
-            <div
-              key={item.label}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                marginBottom: 8,
-              }}
-            >
-              <div
-                style={{
-                  width: 11,
-                  height: 11,
-                  borderRadius: '50%',
-                  background: item.c,
-                  flexShrink: 0,
-                  boxShadow: `0 0 8px ${item.c}`,
-                }}
-              />
-              <span style={{ fontSize: 12, opacity: 0.88 }}>{item.label}</span>
-              <span style={{ fontSize: 10, opacity: 0.45, marginLeft: 'auto' }}>{item.range}</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, opacity: 0.92, letterSpacing: 1.2 }}>Inclination</div>
+            <div style={{ fontSize: 10, opacity: 0.4 }}>
+              {sidePanelSlide + 1}/{SIDE_PANEL_SLIDE_COUNT}
             </div>
-          ))}
-
-          <div
-            style={{
-              borderTop: '1px solid rgba(255,255,255,0.08)',
-              marginTop: 12,
-              paddingTop: 12,
-            }}
-          >
-            <div style={{ fontSize: 10, opacity: 0.45, marginBottom: 8 }}>Distribution</div>
-            {bucketRows.map((row) => (
-              <div
-                key={row.key}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  fontSize: 11,
-                  opacity: 0.82,
-                  marginBottom: 4,
-                }}
-              >
-                <span>{row.label}</span>
-                <span>
-                  {row.n.toLocaleString()} ({hist.pct(row.n)}%)
-                </span>
-              </div>
-            ))}
           </div>
 
-          <div
-            style={{
-              borderTop: '1px solid rgba(255,255,255,0.08)',
-              marginTop: 12,
-              paddingTop: 12,
-            }}
-          >
-            <div style={{ fontSize: 10, opacity: 0.45, marginBottom: 8 }}>COLOR MODE</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              {Object.entries(MODES).map(([key, val]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => handleModeChange(key)}
+          {sidePanelSlide === 0 && (
+            <>
+              <div style={{ fontSize: 10, opacity: 0.48, marginBottom: 12 }}>Low · medium · high</div>
+              {lmhRows.map((row) => (
+                <div
+                  key={row.key}
                   style={{
-                    padding: '6px 10px',
-                    borderRadius: 6,
-                    border: `1px solid ${mode === key ? 'rgba(100,150,255,0.55)' : 'rgba(255,255,255,0.1)'}`,
-                    background: mode === key ? 'rgba(100,150,255,0.18)' : 'transparent',
-                    color: '#fff',
-                    cursor: 'pointer',
-                    fontSize: 11,
-                    textAlign: 'left',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    marginBottom: 12,
                   }}
                 >
-                  {val.label}
-                </button>
+                  <div
+                    style={{
+                      width: 14,
+                      height: 14,
+                      borderRadius: '50%',
+                      background: row.c,
+                      flexShrink: 0,
+                      boxShadow: `0 0 6px ${row.c}`,
+                    }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, opacity: 0.95 }}>{row.label}</div>
+                    <div style={{ fontSize: 10, opacity: 0.45 }}>{row.range}</div>
+                  </div>
+                  <div style={{ textAlign: 'right', fontSize: 11, opacity: 0.88 }}>
+                    <div>{bucketN(row.key).toLocaleString()}</div>
+                    <div style={{ opacity: 0.5 }}>{bucketPct(row.key)}%</div>
+                  </div>
+                </div>
               ))}
-            </div>
-          </div>
+            </>
+          )}
 
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginTop: 14, opacity: 0.5 }}>
-            <span style={{ cursor: 'default' }}>◀</span>
-            <span style={{ cursor: 'default' }}>☰</span>
-            <span style={{ cursor: 'default' }}>▶</span>
+          {sidePanelSlide === 1 && (
+            <>
+              <div style={{ fontSize: 10, opacity: 0.48, marginBottom: 12 }}>Equatorial · retrograde</div>
+              {erRows.map((row) => (
+                <div
+                  key={row.key}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    marginBottom: 12,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 14,
+                      height: 14,
+                      borderRadius: '50%',
+                      background: row.c,
+                      flexShrink: 0,
+                      boxShadow: `0 0 6px ${row.c}`,
+                    }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, opacity: 0.95 }}>{row.label}</div>
+                    <div style={{ fontSize: 10, opacity: 0.45 }}>{row.range}</div>
+                  </div>
+                  <div style={{ textAlign: 'right', fontSize: 11, opacity: 0.88 }}>
+                    <div>{bucketN(row.key).toLocaleString()}</div>
+                    <div style={{ opacity: 0.5 }}>{bucketPct(row.key)}%</div>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+
+          {sidePanelSlide === 2 && (
+            <>
+              <div style={{ fontSize: 10, opacity: 0.48, marginBottom: 12 }}>All bands · distribution</div>
+              {INCLINATION_BANDS.map((row) => (
+                <div
+                  key={row.key}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    marginBottom: 8,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: '50%',
+                      background: row.c,
+                      flexShrink: 0,
+                      boxShadow: `0 0 4px ${row.c}`,
+                    }}
+                  />
+                  <span style={{ fontSize: 11, opacity: 0.88, flex: 1 }}>{row.label}</span>
+                  <span style={{ fontSize: 10, opacity: 0.42 }}>{row.range}</span>
+                  <span style={{ fontSize: 10, opacity: 0.75, marginLeft: 4 }}>
+                    {bucketN(row.key).toLocaleString()} ({bucketPct(row.key)}%)
+                  </span>
+                </div>
+              ))}
+            </>
+          )}
+
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              gap: 14,
+              marginTop: 16,
+              paddingTop: 10,
+              borderTop: '1px solid rgba(255,255,255,0.08)',
+            }}
+          >
+            <button
+              type="button"
+              aria-label="Previous panel"
+              onClick={() =>
+                setSidePanelSlide((s) => (s - 1 + SIDE_PANEL_SLIDE_COUNT) % SIDE_PANEL_SLIDE_COUNT)
+              }
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'rgba(255,255,255,0.75)',
+                cursor: 'pointer',
+                fontSize: 14,
+                padding: 4,
+              }}
+            >
+              ◀
+            </button>
+            <button
+              type="button"
+              aria-label="First panel"
+              onClick={() => setSidePanelSlide(0)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'rgba(255,255,255,0.55)',
+                cursor: 'pointer',
+                fontSize: 14,
+                padding: 4,
+              }}
+            >
+              ☰
+            </button>
+            <button
+              type="button"
+              aria-label="Next panel"
+              onClick={() => setSidePanelSlide((s) => (s + 1) % SIDE_PANEL_SLIDE_COUNT)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'rgba(255,255,255,0.75)',
+                cursor: 'pointer',
+                fontSize: 14,
+                padding: 4,
+              }}
+            >
+              ▶
+            </button>
           </div>
         </div>
       </div>
@@ -642,42 +686,15 @@ export default function GlobeView() {
           style={{
             pointerEvents: 'none',
             display: 'flex',
-            flexDirection: 'column',
             alignItems: 'center',
-            gap: 6,
+            justifyContent: 'center',
             flex: 1,
-            minWidth: 200,
+            minWidth: 120,
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>
             <span>Clouds {cloudsOn ? 'ON' : 'OFF'}</span>
             <span>{fps} FPS</span>
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              justifyContent: 'center',
-              gap: 12,
-              maxWidth: 640,
-            }}
-          >
-            {MODES.inclination.legend.map((item) => (
-              <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <span
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: '50%',
-                    background: item.c,
-                    boxShadow: `0 0 6px ${item.c}`,
-                  }}
-                />
-                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontFamily: 'system-ui, sans-serif' }}>
-                  {item.label}
-                </span>
-              </div>
-            ))}
           </div>
         </div>
 
