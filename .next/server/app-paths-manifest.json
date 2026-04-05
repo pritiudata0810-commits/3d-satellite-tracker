@@ -1,9 +1,9 @@
 {
   "/_not-found/page": "app/_not-found/page.js",
   "/api/active/route": "app/api/active/route.js",
-  "/api/gps/route": "app/api/gps/route.js",
-  "/api/kuiper/route": "app/api/kuiper/route.js",
   "/api/starlink/route": "app/api/starlink/route.js",
   "/api/tle/route": "app/api/tle/route.js",
+  "/api/kuiper/route": "app/api/kuiper/route.js",
+  "/api/gps/route": "app/api/gps/route.js",
   "/page": "app/page.js"
 }

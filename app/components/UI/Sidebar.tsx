@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 import type { TelemetryPayload } from '@/app/lib/types'
 import { pct } from '@/app/lib/satelliteUtils'
 
@@ -13,13 +12,24 @@ function Sq({ c }: { c: string }) {
   return <span className="inline-block h-3 w-3 shrink-0 rounded-sm shadow-[0_0_6px_currentColor]" style={{ background: c, color: c }} />
 }
 
-export function Sidebar({ telemetry, open, onToggleOpen }: { telemetry: TelemetryPayload | null; open: boolean; onToggleOpen: () => void }) {
-  const [slide, setSlide] = useState(0)
+export function Sidebar({
+  telemetry,
+  open,
+  onToggleOpen,
+  slide,
+  onSlideChange,
+}: {
+  telemetry: TelemetryPayload | null
+  open: boolean
+  onToggleOpen: () => void
+  slide: number
+  onSlideChange: (slide: number) => void
+}) {
   const t = telemetry
   const total = t?.total ?? 0
 
-  const prev = () => setSlide((s) => (s - 1 + SLIDE_COUNT) % SLIDE_COUNT)
-  const next = () => setSlide((s) => (s + 1) % SLIDE_COUNT)
+  const prev = () => onSlideChange((slide - 1 + SLIDE_COUNT) % SLIDE_COUNT)
+  const next = () => onSlideChange((slide + 1) % SLIDE_COUNT)
 
   const incLegend = [
     { c: '#e63946', label: 'Equatorial', r: '0°–30°' },
@@ -337,7 +347,7 @@ export function Sidebar({ telemetry, open, onToggleOpen }: { telemetry: Telemetr
           <button type="button" onClick={prev} className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-900/80 text-white shadow hover:bg-sky-800">
             &lt;
           </button>
-          <button type="button" onClick={() => setSlide(0)} className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-900/80 text-lg text-white shadow hover:bg-sky-800">
+          <button type="button" onClick={() => onSlideChange(0)} className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-900/80 text-lg text-white shadow hover:bg-sky-800">
             ≡
           </button>
           <button type="button" onClick={next} className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-900/80 text-white shadow hover:bg-sky-800">

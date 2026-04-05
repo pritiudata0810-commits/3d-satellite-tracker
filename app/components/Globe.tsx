@@ -6,8 +6,10 @@ import * as THREE from 'three'
 import axios from 'axios'
 import type { TleRecord, SatellitePoint, TelemetryPayload } from '@/app/lib/types'
 import { COUNTRIES_GEO_URL, EARTH_BUMP, EARTH_DAY, EARTH_NIGHT, STARFIELD } from '@/app/lib/constants'
-import { propagateAll, buildTelemetry, hardwareBucket, inclinationColor } from '@/app/lib/satelliteUtils'
+import { propagateAll, buildTelemetry } from '@/app/lib/satelliteUtils'
 import { noradFromLine1 } from '@/app/lib/tleParser'
+import { filterTlesByMenu, type MenuFilter } from '@/app/lib/satelliteFilters'
+import { pointVizColor } from '@/app/lib/vizColors'
 import { sampleGroundTrackRing } from '@/app/lib/orbitMath'
 import type { GlobeApi } from './types'
 
@@ -49,6 +51,10 @@ type Props = {
     animPaused: boolean
   }
   onUtc: (s: string) => void
+  /** Right sidebar slide index (0–6); drives satellite coloring. */
+  vizMode?: number
+  /** Top-nav catalog filter. */
+  menuFilter?: MenuFilter | null
 }
 
 function formatUtc(d: Date) {
@@ -75,7 +81,16 @@ export default function GlobeView(props: Partial<Props> = {}) {
       animPaused: false,
     },
     onUtc = () => {},
+    vizMode = 0,
+    menuFilter = null,
   } = props
+
+  const vizModeRef = useRef(vizMode)
+  const menuFilterRef = useRef<MenuFilter | null>(menuFilter)
+  vizModeRef.current = vizMode
+  menuFilterRef.current = menuFilter
+
+  const propagateRef = useRef<() => void>(() => {})
 
   const rootRef = useRef<HTMLDivElement>(null)
   const globeRef = useRef<GlobeInstance | null>(null)
@@ -128,15 +143,17 @@ export default function GlobeView(props: Partial<Props> = {}) {
       .atmosphereAltitude(0.26)
       .width(window.innerWidth)
       .height(window.innerHeight)
-      // ── Use customLayerData with SphereGeometry so satellites render as DOTS not bars ──
+      // One shared sphere geometry per satellite; scale in update (avoid realloc each frame).
       .customLayerData([])
-      .customThreeObject((d: any) => {
-        const geo = new THREE.SphereGeometry(0.9, 6, 6)
-        const mat = new THREE.MeshBasicMaterial({ color: d.color || '#ff8c00' })
+      .customThreeObject(() => {
+        const geo = new THREE.SphereGeometry(0.42, 5, 5)
+        const mat = new THREE.MeshBasicMaterial({ color: '#ff8c00' })
         return new THREE.Mesh(geo, mat)
       })
       .customThreeObjectUpdate((obj: any, d: any) => {
         obj.material.color.set(d.color || '#ff8c00')
+        const s = d._selected ? 1.5 : 1
+        obj.scale.setScalar(s)
         Object.assign(obj.position, globe.getCoords(d.lat, d.lng, d.alt))
       })
 
@@ -180,33 +197,25 @@ export default function GlobeView(props: Partial<Props> = {}) {
     function pushPointsToGlobe() {
       const pts = pointsRef.current
       const sel = selectedRef.current
+      const tmap = tleByNoradRef.current
+      const mode = vizModeRef.current
 
-      // Color satellites based on current mode (inclination by default)
-      const colored = pts.map(p => ({
-        ...p,
-        color: sel.has(p.norad) ? '#ffffff' : p.color,
-        // Make selected satellites bigger via a flag
-        _selected: sel.has(p.norad),
-      }))
+      const colored = pts.map((p) => {
+        const base = pointVizColor(mode, p, tmap.get(p.norad))
+        return {
+          ...p,
+          color: sel.has(p.norad) ? '#ffffff' : base,
+          _selected: sel.has(p.norad),
+        }
+      })
 
-      globe
-        .customLayerData(colored)
-        .customThreeObject((d: any) => {
-          const size = d._selected ? 1.4 : 0.9
-          const geo = new THREE.SphereGeometry(size, 6, 6)
-          const mat = new THREE.MeshBasicMaterial({ color: d.color || '#ff8c00' })
-          return new THREE.Mesh(geo, mat)
-        })
-        .customThreeObjectUpdate((obj: any, d: any) => {
-          obj.material.color.set(d.color || '#ff8c00')
-          Object.assign(obj.position, globe.getCoords(d.lat, d.lng, d.alt))
-        })
+      globe.customLayerData(colored)
 
-      // Labels when zoomed in
       const pov = globe.pointOfView()
       const zoomed = pov.altitude < 0.38
       if (zoomed && pts.length) {
-        const step = Math.max(1, Math.ceil(pts.length / 85))
+        const maxLab = 72
+        const step = Math.max(1, Math.ceil(pts.length / maxLab))
         const lab = pts
           .filter((_, i) => i % step === 0)
           .map((p) => ({
@@ -235,13 +244,18 @@ export default function GlobeView(props: Partial<Props> = {}) {
     function propagate() {
       const tles = tlesRef.current
       if (!tles.length) return
-      const pts = propagateAll(tles, simTimeRef.current)
+      const filtered = filterTlesByMenu(tles, menuFilterRef.current)
+      const pts = propagateAll(filtered, simTimeRef.current).map((p) => ({
+        ...p,
+        color: pointVizColor(vizModeRef.current, p, tleByNoradRef.current.get(p.norad)),
+      }))
       pointsRef.current = pts
       onPointsUpdateRef.current(pts)
-      onTelemetryRef.current(buildTelemetry(pts, tles))
+      onTelemetryRef.current(buildTelemetry(pts, filtered))
       onUtcRef.current(formatUtc(simTimeRef.current))
       pushPointsToGlobe()
     }
+    propagateRef.current = propagate
 
     fetch(COUNTRIES_GEO_URL)
       .then((r) => r.json())
@@ -330,7 +344,7 @@ export default function GlobeView(props: Partial<Props> = {}) {
       }
 
       const sp = speedRef.current
-      const minStep = sp >= 10 ? 40 : sp >= 5 ? 55 : sp >= 2 ? 90 : 1000
+      const minStep = sp >= 10 ? 90 : sp >= 5 ? 140 : sp >= 2 ? 220 : 380
 
       if (wall - lastPropRef.current >= minStep && tlesRef.current.length) {
         lastPropRef.current = wall
@@ -369,6 +383,14 @@ export default function GlobeView(props: Partial<Props> = {}) {
     selectedRef.current = selected
     pushPointsRef.current()
   }, [selected])
+
+  useEffect(() => {
+    propagateRef.current()
+  }, [menuFilter])
+
+  useEffect(() => {
+    pushPointsRef.current()
+  }, [vizMode])
 
   return <div ref={rootRef} className="absolute inset-0" />
 }

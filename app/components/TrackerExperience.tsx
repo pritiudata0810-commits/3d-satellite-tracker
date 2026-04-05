@@ -9,6 +9,7 @@ import { SearchBar } from './UI/SearchBar'
 import { SatelliteInfoPanel } from './UI/SatelliteInfoPanel'
 import type { GlobeApi } from './types'
 import type { SatellitePoint, TelemetryPayload, TleRecord } from '@/app/lib/types'
+import type { MenuFilter } from '@/app/lib/satelliteFilters'
 import { noradFromLine1 } from '@/app/lib/tleParser'
 import * as satellite from 'satellite.js'
 
@@ -33,6 +34,8 @@ export default function TrackerExperience() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [ui, setUi] = useState(initialUi)
+  const [vizMode, setVizMode] = useState(0)
+  const [menuFilter, setMenuFilter] = useState<MenuFilter>(null)
 
   const selectedPoints = useMemo(
     () => points.filter((p) => selected.has(p.norad)),
@@ -52,7 +55,11 @@ export default function TrackerExperience() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-black">
-      <TopNav onSearchClick={() => setSearchOpen(true)} />
+      <TopNav
+        onSearchClick={() => setSearchOpen(true)}
+        onFilterChange={setMenuFilter}
+        onVizSlide={setVizMode}
+      />
 
       <Globe
         onReady={setGlobeApi}
@@ -63,12 +70,18 @@ export default function TrackerExperience() {
         onPointsUpdate={setPoints}
         ui={ui}
         onUtc={setUtcStr}
+        vizMode={vizMode}
+        menuFilter={menuFilter}
       />
 
       <div className="pointer-events-none absolute left-4 top-16 z-30">
         <p className="text-3xl font-extrabold text-white/20">3D Satellite Tracker</p>
         <p className="mt-1 text-sm text-zinc-500">
-          {tles.length ? `${tles.length.toLocaleString()} satellites` : 'Loading ephemeris…'}
+          {telemetry
+            ? `${telemetry.total.toLocaleString()} satellites`
+            : tles.length
+              ? `${tles.length.toLocaleString()} in catalog…`
+              : 'Loading ephemeris…'}
         </p>
       </div>
 
@@ -76,6 +89,8 @@ export default function TrackerExperience() {
         telemetry={telemetry}
         open={sidebarOpen}
         onToggleOpen={() => setSidebarOpen((o) => !o)}
+        slide={vizMode}
+        onSlideChange={setVizMode}
       />
 
       <SatelliteInfoPanel
