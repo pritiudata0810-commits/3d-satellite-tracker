@@ -1,9 +1,0 @@
-{
-  "/_not-found/page": "/_not-found",
-  "/api/active/route": "/api/active",
-  "/api/gps/route": "/api/gps",
-  "/api/kuiper/route": "/api/kuiper",
-  "/api/starlink/route": "/api/starlink",
-  "/api/tle/route": "/api/tle",
-  "/page": "/"
-}
