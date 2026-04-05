@@ -72,7 +72,11 @@ export default function TrackerExperience() {
         </p>
       </div>
 
-      <Sidebar telemetry={telemetry} open={sidebarOpen} onToggleOpen={() => setSidebarOpen((o) => !o)} />
+      <Sidebar
+        telemetry={telemetry}
+        open={sidebarOpen}
+        onToggleOpen={() => setSidebarOpen((o) => !o)}
+      />
 
       <SatelliteInfoPanel
         selected={selectedPoints}
@@ -117,9 +121,11 @@ export default function TrackerExperience() {
           try {
             const satrec = satellite.twoline2satrec(tle.TLE_LINE1, tle.TLE_LINE2)
             const pv = satellite.propagate(satrec, new Date())
-            if (pv?.position) {
+            // Fix: cast position to the correct type to avoid TypeScript error
+            const pos = pv?.position
+            if (pos && typeof pos !== 'boolean') {
               const gmst = satellite.gstime(new Date())
-              const geo = satellite.eciToGeodetic(pv.position, gmst)
+              const geo = satellite.eciToGeodetic(pos, gmst)
               const lat = satellite.degreesLat(geo.latitude)
               const lng = satellite.degreesLong(geo.longitude)
               globeApi?.focusOn(lat, lng, 0.12)

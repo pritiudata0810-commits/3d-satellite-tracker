@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import GlobeGL from 'globe.gl'
+import GlobeGL, { type GlobeInstance } from 'globe.gl'
 import * as THREE from 'three'
 import axios from 'axios'
 import type { TleRecord, SatellitePoint, TelemetryPayload } from '@/app/lib/types'
@@ -78,7 +78,7 @@ export default function GlobeView(props: Partial<Props> = {}) {
   } = props
 
   const rootRef = useRef<HTMLDivElement>(null)
-  const globeRef = useRef<any>(null)
+  const globeRef = useRef<GlobeInstance | null>(null)
   const hemiRef = useRef<THREE.HemisphereLight | null>(null)
   const rebuildPathsRef = useRef<() => void>(() => {})
   const pushPointsRef = useRef<() => void>(() => {})
@@ -106,7 +106,7 @@ export default function GlobeView(props: Partial<Props> = {}) {
     const el = rootRef.current
     if (!el) return
 
-    const globe = GlobeGL()(el)
+    const globe = new (GlobeGL as any)(el) as GlobeInstance
     globeRef.current = globe
 
     const tlesRef: { current: TleRecord[] } = { current: [] }

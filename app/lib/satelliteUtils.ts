@@ -14,15 +14,16 @@ export function propagateOne(tle: TleRecord, when: Date): SatellitePoint | null 
   try {
     const satrec = satellite.twoline2satrec(tle.TLE_LINE1, tle.TLE_LINE2)
     const posVel = satellite.propagate(satrec, when)
-    if (!posVel?.position) return null
+    const pos = posVel?.position
+    if (!pos || typeof pos === 'boolean') return null
     const gmst = satellite.gstime(when)
-    const geo = satellite.eciToGeodetic(posVel.position, gmst)
+    const geo = satellite.eciToGeodetic(pos, gmst)
     const lat = satellite.degreesLat(geo.latitude)
     const lng = satellite.degreesLong(geo.longitude)
     const altKm = geo.height
     const alt = altKm / 6371
     if (!Number.isFinite(lat) || !Number.isFinite(lng) || alt < 0) return null
-    const inclination = satellite.radiansToDegrees(satrec.inclo)
+    const inclination = satrec.inclo * (180 / Math.PI)
     return {
       norad: noradFromLine1(tle.TLE_LINE1),
       name: tle.OBJECT_NAME,
@@ -85,7 +86,6 @@ export function orbitClassify(meanMotionRevsPerDay: number, inc: number): string
   return 'Circular'
 }
 
-/** Mean motion in revolutions per day (approx). */
 export function meanMotionFromSatrec(tle: TleRecord): number {
   try {
     const s = satellite.twoline2satrec(tle.TLE_LINE1, tle.TLE_LINE2)
@@ -138,9 +138,7 @@ export function buildTelemetry(points: SatellitePoint[], tles: TleRecord[]): Tel
     else reentry.nodata++
 
     const tle = tleByNorad.get(p.norad)
-    const oc = tle
-      ? orbitClassify(meanMotionFromSatrec(tle), p.inclination)
-      : 'Unknown'
+    const oc = tle ? orbitClassify(meanMotionFromSatrec(tle), p.inclination) : 'Unknown'
     orbitClass[oc] = (orbitClass[oc] ?? 0) + 1
   }
 
