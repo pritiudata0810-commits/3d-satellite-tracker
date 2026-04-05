@@ -1,0 +1,61 @@
+{
+  "pages": {
+    "/_not-found/page": [
+      "static/chunks/webpack-7c769db942982f71.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/255-38b49df12a94ee57.js",
+      "static/chunks/main-app-e09b5f058f6dbef4.js",
+      "static/chunks/app/_not-found/page-510e41ff22cc6b1a.js"
+    ],
+    "/layout": [
+      "static/chunks/webpack-7c769db942982f71.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/255-38b49df12a94ee57.js",
+      "static/chunks/main-app-e09b5f058f6dbef4.js",
+      "static/css/401103c363f44114.css",
+      "static/chunks/app/layout-cd2eae912c6c405a.js"
+    ],
+    "/api/active/route": [
+      "static/chunks/webpack-7c769db942982f71.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/255-38b49df12a94ee57.js",
+      "static/chunks/main-app-e09b5f058f6dbef4.js",
+      "static/chunks/app/api/active/route-e6a8ce20b9c78258.js"
+    ],
+    "/api/gps/route": [
+      "static/chunks/webpack-7c769db942982f71.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/255-38b49df12a94ee57.js",
+      "static/chunks/main-app-e09b5f058f6dbef4.js",
+      "static/chunks/app/api/gps/route-e6a8ce20b9c78258.js"
+    ],
+    "/api/kuiper/route": [
+      "static/chunks/webpack-7c769db942982f71.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/255-38b49df12a94ee57.js",
+      "static/chunks/main-app-e09b5f058f6dbef4.js",
+      "static/chunks/app/api/kuiper/route-e6a8ce20b9c78258.js"
+    ],
+    "/api/starlink/route": [
+      "static/chunks/webpack-7c769db942982f71.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/255-38b49df12a94ee57.js",
+      "static/chunks/main-app-e09b5f058f6dbef4.js",
+      "static/chunks/app/api/starlink/route-e6a8ce20b9c78258.js"
+    ],
+    "/api/tle/route": [
+      "static/chunks/webpack-7c769db942982f71.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/255-38b49df12a94ee57.js",
+      "static/chunks/main-app-e09b5f058f6dbef4.js",
+      "static/chunks/app/api/tle/route-e6a8ce20b9c78258.js"
+    ],
+    "/page": [
+      "static/chunks/webpack-7c769db942982f71.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/255-38b49df12a94ee57.js",
+      "static/chunks/main-app-e09b5f058f6dbef4.js",
+      "static/chunks/app/page-d807c85315e9cd70.js"
+    ]
+  }
+}
