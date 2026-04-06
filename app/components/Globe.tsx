@@ -171,19 +171,35 @@ export default function GlobeView(props: Partial<Props> = {}) {
     }
 
     function createSatelliteMesh(capacity: number) {
-      const geometry = new THREE.SphereGeometry(0.75, 6, 6)
-      const material = new THREE.MeshBasicMaterial({ vertexColors: true })
-      const mesh = new THREE.InstancedMesh(geometry, material, capacity)
-      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
-      mesh.frustumCulled = false
-      const colorAttr = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3)
-      colorAttr.setUsage(THREE.DynamicDrawUsage)
-      mesh.instanceColor = colorAttr
-      scene.add(mesh)
-      instancedMeshRef.current = mesh
-      instanceColorAttrRef.current = colorAttr
-      return mesh
-    }
+    const geometry = new THREE.SphereGeometry(0.75, 6, 6)
+
+    const material = new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      toneMapped: false // ✅ FIX: prevents dark/black rendering
+    })
+
+    const mesh = new THREE.InstancedMesh(geometry, material, capacity)
+
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    mesh.frustumCulled = false
+
+    const colorAttr = new THREE.InstancedBufferAttribute(
+      new Float32Array(capacity * 3),
+      3
+    )
+    colorAttr.setUsage(THREE.DynamicDrawUsage)
+
+    // ✅ CRITICAL FIX
+    mesh.instanceColor = colorAttr
+    mesh.geometry.setAttribute('instanceColor', colorAttr)
+
+    scene.add(mesh)
+
+    instancedMeshRef.current = mesh
+    instanceColorAttrRef.current = colorAttr
+
+    return mesh
+  }
 
     function disposeOldSatelliteMesh() {
       const mesh = instancedMeshRef.current
@@ -210,35 +226,65 @@ export default function GlobeView(props: Partial<Props> = {}) {
     }
 
     function updateInstanceBuffers(updatedPoints: SatellitePoint[]) {
-      const mesh = instancedMeshRef.current
-      const colorAttr = instanceColorAttrRef.current
-      if (!mesh || !colorAttr) return
+    const mesh = instancedMeshRef.current
+    const colorAttr = instanceColorAttrRef.current
 
-      const selected = selectedRef.current
-      const count = updatedPoints.length
-      const colors = colorAttr.array as Float32Array
-      instanceIdToNoradRef.current = updatedPoints.map((point) => point.norad)
-      noradToInstanceIdRef.current = new Map(updatedPoints.map((point, index) => [point.norad, index]))
+    if (!mesh || !colorAttr) return
 
-      for (let index = 0; index < count; index++) {
-        const point = updatedPoints[index]
-        const { x, y, z } = globe.getCoords(point.lat, point.lng, point.alt)
-        tempMat.identity()
-        tempMat.setPosition(x, y, z)
-        const scaleVal = selected.has(point.norad) ? 1.45 : 1
-        tempMat.scale(new THREE.Vector3(scaleVal * SATELLITE_SCALE, scaleVal * SATELLITE_SCALE, scaleVal * SATELLITE_SCALE))
-        mesh.setMatrixAt(index, tempMat)
+    const selected = selectedRef.current
+    const count = updatedPoints.length
 
-        const [r, g, b] = selected.has(point.norad) ? [1, 1, 1] : hexToRgb(point.color)
-        colors[index * 3] = r
-        colors[index * 3 + 1] = g
-        colors[index * 3 + 2] = b
-      }
+    const colors = colorAttr.array as Float32Array
 
-      mesh.count = count
-      mesh.instanceMatrix.needsUpdate = true
-      colorAttr.needsUpdate = true
+    instanceIdToNoradRef.current = updatedPoints.map((p) => p.norad)
+    noradToInstanceIdRef.current = new Map(
+      updatedPoints.map((p, i) => [p.norad, i])
+    )
+
+    for (let i = 0; i < count; i++) {
+      const point = updatedPoints[i]
+
+      const { x, y, z } = globe.getCoords(point.lat, point.lng, point.alt)
+
+      tempMat.identity()
+      tempMat.setPosition(x, y, z)
+
+      const scaleVal = selected.has(point.norad) ? 1.45 : 1
+
+      tempMat.scale(
+        new THREE.Vector3(
+          scaleVal * SATELLITE_SCALE,
+          scaleVal * SATELLITE_SCALE,
+          scaleVal * SATELLITE_SCALE
+        )
+      )
+
+      mesh.setMatrixAt(i, tempMat)
+
+      // ✅ SAFETY FIX (prevents black color)
+      const safeColor =
+        point.color && point.color !== '' ? point.color : '#00ffcc'
+
+      const [r, g, b] = selected.has(point.norad)
+        ? [1, 1, 1]
+        : hexToRgb(safeColor)
+
+      colors[i * 3] = r
+      colors[i * 3 + 1] = g
+      colors[i * 3 + 2] = b
     }
+
+    mesh.count = count
+
+    // ✅ GPU updates
+    mesh.instanceMatrix.needsUpdate = true
+    colorAttr.needsUpdate = true
+
+    // ✅ IMPORTANT FIX
+    if (mesh.instanceColor) {
+      mesh.instanceColor.needsUpdate = true
+    }
+  }
 
     function rebuildPaths() {
       const border = uiRef.current.bordersOn ? borderPathsRef.current : []
