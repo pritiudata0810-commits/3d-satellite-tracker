@@ -141,15 +141,18 @@ export default function GlobeView(props: Partial<Props> = {}) {
       .atmosphereAltitude(0.26)
       .width(window.innerWidth)
       .height(window.innerHeight)
-      // ── FIX: pointsData = ONE draw call for all satellites ──
-      .pointsData([])
-      .pointLat('lat')
-      .pointLng('lng')
-      .pointAltitude('alt')
-      .pointColor('color')
-      .pointRadius(0.12)
-      .pointResolution(4)
-      .pointsMerge(true)
+      // Sphere dots at correct orbital altitude
+      .customLayerData([])
+      .customThreeObject(() => {
+        const geo = new THREE.SphereGeometry(0.42, 4, 4)
+        const mat = new THREE.MeshBasicMaterial({ color: '#ff8c00' })
+        return new THREE.Mesh(geo, mat)
+      })
+      .customThreeObjectUpdate((obj: any, d: any) => {
+        obj.material.color.set(d.color || '#ff8c00')
+        obj.scale.setScalar(d._selected ? 1.5 : 1)
+        Object.assign(obj.position, globe.getCoords(d.lat, d.lng, d.alt))
+      })
 
     globe.pointOfView({ altitude: 2.25 })
     globe.controls().autoRotate = true
@@ -187,31 +190,22 @@ export default function GlobeView(props: Partial<Props> = {}) {
     }
     rebuildPathsRef.current = rebuildPaths
 
-    // ── FIX: pointsData instead of customLayerData ──
     function pushPointsToGlobe() {
       const pts = pointsRef.current
       const sel = selectedRef.current
       const tmap = tleByNoradRef.current
       const mode = vizModeRef.current
-      const hasSel = sel.size > 0
 
       const colored = pts.map((p) => {
         const base = pointVizColor(mode, p, tmap.get(p.norad))
         return {
           ...p,
           color: sel.has(p.norad) ? '#ffffff' : base,
+          _selected: sel.has(p.norad),
         }
       })
 
-      globe
-        .pointsData(colored)
-        .pointLat('lat')
-        .pointLng('lng')
-        .pointAltitude('alt')
-        .pointColor('color')
-        .pointRadius((d: any) => sel.has(d.norad) ? 0.22 : 0.12)
-        .pointResolution(4)
-        .pointsMerge(!hasSel)
+      globe.customLayerData(colored)
 
       const pov = globe.pointOfView()
       const zoomed = pov.altitude < 0.38
@@ -287,8 +281,7 @@ export default function GlobeView(props: Partial<Props> = {}) {
     void loadTle()
     const tleIv = setInterval(() => void loadTle(), 50 * 60 * 1000)
 
-    // ── FIX: onPointClick instead of onCustomLayerClick ──
-    globe.onPointClick((d: any) => {
+    globe.onCustomLayerClick((d: any) => {
       const next = new Set(selectedRef.current)
       if (next.has(d.norad)) next.delete(d.norad)
       else next.add(d.norad)
@@ -345,8 +338,9 @@ export default function GlobeView(props: Partial<Props> = {}) {
         simTimeRef.current = new Date(simTimeRef.current.getTime() + dt * speedRef.current)
       }
 
+      // ── FIX: longer intervals = less CPU = no more hanging ──
       const sp = speedRef.current
-      const minStep = sp >= 10 ? 90 : sp >= 5 ? 140 : sp >= 2 ? 220 : 380
+      const minStep = sp >= 10 ? 200 : sp >= 5 ? 400 : sp >= 2 ? 800 : 2000
 
       if (wall - lastPropRef.current >= minStep && tlesRef.current.length) {
         lastPropRef.current = wall
