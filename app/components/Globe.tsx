@@ -148,13 +148,41 @@ export default function GlobeView(props: Partial<Props> = {}) {
         return new THREE.Mesh(geo, mat)
       })
       .customThreeObjectUpdate((obj: any, d: any) => {
-        // ✅ Updated color logic: always compute fresh from vizMode + selection
-        const baseColor = pointVizColor(vizModeRef.current, d, tleByNoradRef.current.get(d.norad))
-        obj.material.color.set(d._selected ? '#ffffff' : baseColor)
-        obj.scale.setScalar(d._selected ? 1.5 : 1)
-        Object.assign(obj.position, globe.getCoords(d.lat, d.lng, d.alt))
-      })
+        // PERFORMANCE FIX:
+        // Use the precomputed color on the data object (d.color) and only update
+        // the material color when it actually changed. Also only update selection
+        // related scale when selection state changes.
+        //
+        // This avoids calling material.color.set(...) every frame for thousands of objects,
+        // which was causing GC and GPU upload stalls when colors were enabled.
 
+        // Determine desired color (data already carries color from pushPointsToGlobe)
+        const desiredColor = d._selected ? '#ffffff' : (d.color ?? '#ffffff')
+
+        // Use obj.userData to cache last-applied color and selection state
+        const ud = obj.userData || (obj.userData = {})
+
+        // Only update material color if it changed
+        if (ud._lastColor !== desiredColor) {
+          // set color once when changed
+          try {
+            obj.material.color.set(desiredColor)
+          } catch (e) {
+            // fallback: ignore if material not ready
+          }
+          ud._lastColor = desiredColor
+        }
+
+        // Only update scale when selection state changes
+        if (ud._lastSelected !== !!d._selected) {
+          obj.scale.setScalar(d._selected ? 1.5 : 1)
+          ud._lastSelected = !!d._selected
+        }
+
+        // Update position every frame (cheap)
+        const coords = globe.getCoords(d.lat, d.lng, d.alt)
+        obj.position.set(coords[0], coords[1], coords[2])
+      })
     globe.pointOfView({ altitude: 2.25 })
     globe.controls().autoRotate = true
     globe.controls().autoRotateSpeed = 0.28
@@ -167,6 +195,16 @@ export default function GlobeView(props: Partial<Props> = {}) {
       const renderer = globe.renderer()
       if (renderer) renderer.toneMappingExposure = 1.6
     } catch (e) {}
+
+    async function loadBorders() {
+      try {
+        const res = await axios.get(COUNTRIES_GEO_URL)
+        borderPathsRef.current = countryOutlinesToPaths(res.data)
+      } catch (e) {
+        borderPathsRef.current = []
+      }
+    }
+    loadBorders()
 
     function rebuildPaths() {
       const border = uiRef.current.bordersOn ? borderPathsRef.current : []
@@ -197,6 +235,8 @@ export default function GlobeView(props: Partial<Props> = {}) {
       const tmap = tleByNoradRef.current
       const mode = vizModeRef.current
 
+      // Precompute color once per point here and attach to the data object.
+      // This avoids recomputing color inside customThreeObjectUpdate every frame.
       const colored = pts.map((p) => {
         const base = pointVizColor(mode, p, tmap.get(p.norad))
         return {
@@ -206,9 +246,13 @@ export default function GlobeView(props: Partial<Props> = {}) {
         }
       })
 
-      pointsRef.current = colored // ✅ keep points updated with latest colors
+      // Keep the pointsRef updated with the colored objects
+      pointsRef.current = colored
+
+      // Provide the pre-colored data to globe.gl in one call
       globe.customLayerData(colored)
 
+      // Labels: only compute a sparse set when zoomed in
       const pov = globe.pointOfView()
       const zoomed = pov.altitude < 0.38
       if (zoomed && pts.length) {
@@ -239,6 +283,7 @@ export default function GlobeView(props: Partial<Props> = {}) {
     }
     pushPointsRef.current = pushPointsToGlobe
 
+    // --- Propagation function and plumbing ---
     function propagate() {
       const tles = tlesRef.current
       if (!tles.length) return
@@ -251,18 +296,11 @@ export default function GlobeView(props: Partial<Props> = {}) {
       onPointsUpdateRef.current(pts)
       onTelemetryRef.current(buildTelemetry(pts, filtered))
       onUtcRef.current(formatUtc(simTimeRef.current))
-      pushPointsToGlobe()
+      pushPointsRef.current()
     }
     propagateRef.current = propagate
 
-    fetch(COUNTRIES_GEO_URL)
-      .then((r) => r.json())
-      .then((geo: any) => {
-        borderPathsRef.current = countryOutlinesToPaths(geo)
-        rebuildPaths()
-      })
-      .catch(() => {})
-
+    // Load TLEs and wire up periodic refresh
     async function loadTle() {
       try {
         const res = await axios.get<TleRecord[]>('/api/tle')
@@ -289,7 +327,7 @@ export default function GlobeView(props: Partial<Props> = {}) {
       else next.add(d.norad)
       selectedRef.current = next
       onSelectionChangeRef.current(next)
-      pushPointsToGlobe()
+      pushPointsRef.current()
     })
 
     const onResize = () => {
@@ -326,6 +364,7 @@ export default function GlobeView(props: Partial<Props> = {}) {
         lastWallRef.current = performance.now()
         propagate()
       },
+      getSimTime: () => simTimeRef.current,
     }
 
     onReadyRef.current(api)
@@ -358,9 +397,13 @@ export default function GlobeView(props: Partial<Props> = {}) {
       cancelAnimationFrame(raf)
       clearInterval(tleIv)
       window.removeEventListener('resize', onResize)
+      try {
+        globeRef.current?.renderer()?.dispose()
+      } catch (e) {}
       globeRef.current = null
       hemiRef.current = null
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
