@@ -1,19 +1,19 @@
 {
   "version": 1,
   "functions": {
-    "/api/active": {
-      "maxDuration": 60
-    },
-    "/api/gps": {
+    "/api/starlink": {
       "maxDuration": 60
     },
     "/api/kuiper": {
       "maxDuration": 60
     },
-    "/api/starlink": {
+    "/api/tle": {
       "maxDuration": 60
     },
-    "/api/tle": {
+    "/api/active": {
+      "maxDuration": 60
+    },
+    "/api/gps": {
       "maxDuration": 60
     }
   }

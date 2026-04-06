@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import Globe from './Globe'
 import { TopNav } from './UI/TopNav'
 import { Sidebar } from './UI/Sidebar'
@@ -18,9 +18,9 @@ const initialUi = {
   graticulesOn: true,
   starfieldOn: true,
   dayTexture: true,
-  orbitTrails: true,
+  orbitTrails: false,   // OFF by default — expensive
   cloudsOn: false,
-  terminatorOn: true,
+  terminatorOn: false,  // OFF by default — expensive
   animPaused: false,
 }
 
@@ -36,6 +36,17 @@ export default function TrackerExperience() {
   const [ui, setUi] = useState(initialUi)
   const [vizMode, setVizMode] = useState(0)
   const [menuFilter, setMenuFilter] = useState<MenuFilter>(null)
+
+  // Only update React points state when satellites are selected
+  // (avoids re-rendering with 9999 items every 2 seconds)
+  const selectedRef = useRef(selected)
+  selectedRef.current = selected
+
+  const handlePointsUpdate = useCallback((pts: SatellitePoint[]) => {
+    if (selectedRef.current.size > 0) {
+      setPoints(pts)
+    }
+  }, [])
 
   const selectedPoints = useMemo(
     () => points.filter((p) => selected.has(p.norad)),
@@ -67,7 +78,7 @@ export default function TrackerExperience() {
         onTleLoaded={setTles}
         selected={selected}
         onSelectionChange={setSelected}
-        onPointsUpdate={setPoints}
+        onPointsUpdate={handlePointsUpdate}
         ui={ui}
         onUtc={setUtcStr}
         vizMode={vizMode}
@@ -136,7 +147,6 @@ export default function TrackerExperience() {
           try {
             const satrec = satellite.twoline2satrec(tle.TLE_LINE1, tle.TLE_LINE2)
             const pv = satellite.propagate(satrec, new Date())
-            // Fix: cast position to the correct type to avoid TypeScript error
             const pos = pv?.position
             if (pos && typeof pos !== 'boolean') {
               const gmst = satellite.gstime(new Date())

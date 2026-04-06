@@ -1,8 +1,8 @@
 {
   "/_not-found/page": "/_not-found",
   "/api/active/route": "/api/active",
-  "/api/starlink/route": "/api/starlink",
   "/api/tle/route": "/api/tle",
+  "/api/starlink/route": "/api/starlink",
   "/api/kuiper/route": "/api/kuiper",
   "/api/gps/route": "/api/gps",
   "/page": "/"

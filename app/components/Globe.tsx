@@ -60,6 +60,8 @@ function formatUtc(d: Date) {
   return `${p(d.getUTCMonth() + 1)}/${p(d.getUTCDate())}/${String(d.getUTCFullYear()).slice(2)} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())} UTC`
 }
 
+const MAX_SATS = 12000
+
 export default function GlobeView(props: Partial<Props> = {}) {
   const {
     onReady = () => {},
@@ -89,7 +91,6 @@ export default function GlobeView(props: Partial<Props> = {}) {
   menuFilterRef.current = menuFilter
 
   const propagateRef = useRef<() => void>(() => {})
-
   const rootRef = useRef<HTMLDivElement>(null)
   const globeRef = useRef<GlobeInstance | null>(null)
   const hemiRef = useRef<THREE.HemisphereLight | null>(null)
@@ -141,18 +142,7 @@ export default function GlobeView(props: Partial<Props> = {}) {
       .atmosphereAltitude(0.26)
       .width(window.innerWidth)
       .height(window.innerHeight)
-      // Sphere dots at correct orbital altitude
-      .customLayerData([])
-      .customThreeObject(() => {
-        const geo = new THREE.SphereGeometry(0.42, 4, 4)
-        const mat = new THREE.MeshBasicMaterial({ color: '#ff8c00' })
-        return new THREE.Mesh(geo, mat)
-      })
-      .customThreeObjectUpdate((obj: any, d: any) => {
-        obj.material.color.set(d.color || '#ff8c00')
-        obj.scale.setScalar(d._selected ? 1.5 : 1)
-        Object.assign(obj.position, globe.getCoords(d.lat, d.lng, d.alt))
-      })
+      .labelsData([])
 
     globe.pointOfView({ altitude: 2.25 })
     globe.controls().autoRotate = true
@@ -165,7 +155,17 @@ export default function GlobeView(props: Partial<Props> = {}) {
     try {
       const renderer = globe.renderer()
       if (renderer) renderer.toneMappingExposure = 1.6
-    } catch (e) {}
+    } catch (_) {}
+
+    // ── InstancedMesh: ONE draw call for all 9999 satellites ──────────
+    const dummy = new THREE.Object3D()
+    const iColor = new THREE.Color()
+    const dotGeo = new THREE.SphereGeometry(0.42, 4, 4)
+    const dotMat = new THREE.MeshBasicMaterial({ vertexColors: true })
+    const instMesh = new THREE.InstancedMesh(dotGeo, dotMat, MAX_SATS)
+    instMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    instMesh.count = 0
+    globe.scene().add(instMesh)
 
     function rebuildPaths() {
       const border = uiRef.current.bordersOn ? borderPathsRef.current : []
@@ -195,30 +195,33 @@ export default function GlobeView(props: Partial<Props> = {}) {
       const sel = selectedRef.current
       const tmap = tleByNoradRef.current
       const mode = vizModeRef.current
+      const count = Math.min(pts.length, MAX_SATS)
 
-      const colored = pts.map((p) => {
-        const base = pointVizColor(mode, p, tmap.get(p.norad))
-        return {
-          ...p,
-          color: sel.has(p.norad) ? '#ffffff' : base,
-          _selected: sel.has(p.norad),
-        }
-      })
+      // Update all satellite positions in one GPU upload
+      for (let i = 0; i < count; i++) {
+        const p = pts[i]
+        const base = pointVizColor(mode, p, tmap.get(p.norad)) || '#ff8c00'
+        const coords = globe.getCoords(p.lat, p.lng, p.alt)
+        dummy.position.set(coords.x, coords.y, coords.z)
+        dummy.scale.setScalar(sel.has(p.norad) ? 1.6 : 1)
+        dummy.updateMatrix()
+        instMesh.setMatrixAt(i, dummy.matrix)
+        iColor.set(sel.has(p.norad) ? '#ffffff' : base)
+        instMesh.setColorAt(i, iColor)
+      }
+      instMesh.count = count
+      instMesh.instanceMatrix.needsUpdate = true
+      if (instMesh.instanceColor) instMesh.instanceColor.needsUpdate = true
 
-      globe.customLayerData(colored)
-
+      // Labels only when zoomed close
       const pov = globe.pointOfView()
-      const zoomed = pov.altitude < 0.38
-      if (zoomed && pts.length) {
-        const maxLab = 72
-        const step = Math.max(1, Math.ceil(pts.length / maxLab))
+      if (pov.altitude < 0.38 && pts.length) {
+        const step = Math.max(1, Math.ceil(pts.length / 72))
         const lab = pts
           .filter((_, i) => i % step === 0)
           .map((p) => ({
-            lat: p.lat,
-            lng: p.lng,
-            alt: p.alt,
-            text: `${p.name}`,
+            lat: p.lat, lng: p.lng, alt: p.alt,
+            text: p.name,
             color: 'rgba(255,255,255,0.96)',
             size: 0.011,
           }))
@@ -266,9 +269,7 @@ export default function GlobeView(props: Partial<Props> = {}) {
         const res = await axios.get<TleRecord[]>('/api/tle')
         tlesRef.current = res.data
         const m = new Map<number, TleRecord>()
-        for (const t of res.data) {
-          m.set(noradFromLine1(t.TLE_LINE1), t)
-        }
+        for (const t of res.data) m.set(noradFromLine1(t.TLE_LINE1), t)
         tleByNoradRef.current = m
         onTleLoadedRef.current(res.data)
         propagate()
@@ -281,13 +282,24 @@ export default function GlobeView(props: Partial<Props> = {}) {
     void loadTle()
     const tleIv = setInterval(() => void loadTle(), 50 * 60 * 1000)
 
-    globe.onCustomLayerClick((d: any) => {
-      const next = new Set(selectedRef.current)
-      if (next.has(d.norad)) next.delete(d.norad)
-      else next.add(d.norad)
-      selectedRef.current = next
-      onSelectionChangeRef.current(next)
-      pushPointsToGlobe()
+    // Click: find nearest satellite to clicked position
+    globe.onGlobeClick(({ lat, lng }: { lat: number; lng: number }) => {
+      const pts = pointsRef.current
+      if (!pts.length) return
+      let nearest: SatellitePoint | null = null
+      let minDist = Infinity
+      for (const p of pts) {
+        const d = (p.lat - lat) ** 2 + (p.lng - lng) ** 2
+        if (d < minDist) { minDist = d; nearest = p }
+      }
+      if (nearest && minDist < 9) {
+        const next = new Set(selectedRef.current)
+        if (next.has(nearest.norad)) next.delete(nearest.norad)
+        else next.add(nearest.norad)
+        selectedRef.current = next
+        onSelectionChangeRef.current(next)
+        pushPointsToGlobe()
+      }
     })
 
     const onResize = () => {
@@ -338,7 +350,6 @@ export default function GlobeView(props: Partial<Props> = {}) {
         simTimeRef.current = new Date(simTimeRef.current.getTime() + dt * speedRef.current)
       }
 
-      // ── FIX: longer intervals = less CPU = no more hanging ──
       const sp = speedRef.current
       const minStep = sp >= 10 ? 200 : sp >= 5 ? 400 : sp >= 2 ? 800 : 2000
 
@@ -357,6 +368,9 @@ export default function GlobeView(props: Partial<Props> = {}) {
       cancelAnimationFrame(raf)
       clearInterval(tleIv)
       window.removeEventListener('resize', onResize)
+      instMesh.geometry.dispose()
+      ;(instMesh.material as THREE.Material).dispose()
+      globe.scene().remove(instMesh)
       globeRef.current = null
       hemiRef.current = null
     }
