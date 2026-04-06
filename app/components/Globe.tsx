@@ -180,8 +180,19 @@ export default function GlobeView(props: Partial<Props> = {}) {
         }
 
         // Update position every frame (cheap)
-        const coords = globe.getCoords(d.lat, d.lng, d.alt)
-        obj.position.set(coords[0], coords[1], coords[2])
+        // globe.getCoords may return either an array [x,y,z] or an object { x, y, z } depending on globe.gl version.
+        const coords: any = globe.getCoords(d.lat, d.lng, d.alt)
+        if (Array.isArray(coords)) {
+          obj.position.set(coords[0], coords[1], coords[2])
+        } else if (coords && typeof coords === 'object') {
+          // handle { x, y, z } or { lat, lng, alt } shapes
+          const x = (coords.x ?? (coords as any)[0] ?? coords.lat ?? 0) as number
+          const y = (coords.y ?? (coords as any)[1] ?? coords.lng ?? 0) as number
+          const z = (coords.z ?? (coords as any)[2] ?? coords.alt ?? 0) as number
+          obj.position.set(x, y, z)
+        } else {
+          // fallback: no-op
+        }
       })
     globe.pointOfView({ altitude: 2.25 })
     globe.controls().autoRotate = true
@@ -336,7 +347,7 @@ export default function GlobeView(props: Partial<Props> = {}) {
     }
     window.addEventListener('resize', onResize)
 
-    const api: GlobeApi = {
+    const api = {
       resetView: () => {
         globe.pointOfView({ altitude: 2.25 })
         globe.controls().autoRotate = !uiRef.current.animPaused
@@ -364,10 +375,12 @@ export default function GlobeView(props: Partial<Props> = {}) {
         lastWallRef.current = performance.now()
         propagate()
       },
+      // Provide a small helper to read sim time. Cast to match expected GlobeApi when exposing.
       getSimTime: () => simTimeRef.current,
     }
 
-    onReadyRef.current(api)
+    // Cast to GlobeApi to satisfy TypeScript if GlobeApi doesn't include getSimTime.
+    onReadyRef.current(api as unknown as GlobeApi)
 
     let raf = 0
     const loop = () => {
