@@ -51,9 +51,7 @@ type Props = {
     animPaused: boolean
   }
   onUtc: (s: string) => void
-  /** Right sidebar slide index (0–6); drives satellite coloring. */
   vizMode?: number
-  /** Top-nav catalog filter. */
   menuFilter?: MenuFilter | null
 }
 
@@ -143,19 +141,15 @@ export default function GlobeView(props: Partial<Props> = {}) {
       .atmosphereAltitude(0.26)
       .width(window.innerWidth)
       .height(window.innerHeight)
-      // One shared sphere geometry per satellite; scale in update (avoid realloc each frame).
-      .customLayerData([])
-      .customThreeObject(() => {
-        const geo = new THREE.SphereGeometry(0.42, 5, 5)
-        const mat = new THREE.MeshBasicMaterial({ color: '#ff8c00' })
-        return new THREE.Mesh(geo, mat)
-      })
-      .customThreeObjectUpdate((obj: any, d: any) => {
-        obj.material.color.set(d.color || '#ff8c00')
-        const s = d._selected ? 1.5 : 1
-        obj.scale.setScalar(s)
-        Object.assign(obj.position, globe.getCoords(d.lat, d.lng, d.alt))
-      })
+      // ── FIX: pointsData = ONE draw call for all satellites ──
+      .pointsData([])
+      .pointLat('lat')
+      .pointLng('lng')
+      .pointAltitude('alt')
+      .pointColor('color')
+      .pointRadius(0.12)
+      .pointResolution(4)
+      .pointsMerge(true)
 
     globe.pointOfView({ altitude: 2.25 })
     globe.controls().autoRotate = true
@@ -165,7 +159,6 @@ export default function GlobeView(props: Partial<Props> = {}) {
     globe.scene().add(hemi)
     hemiRef.current = hemi
 
-    // Boost brightness
     try {
       const renderer = globe.renderer()
       if (renderer) renderer.toneMappingExposure = 1.6
@@ -194,22 +187,31 @@ export default function GlobeView(props: Partial<Props> = {}) {
     }
     rebuildPathsRef.current = rebuildPaths
 
+    // ── FIX: pointsData instead of customLayerData ──
     function pushPointsToGlobe() {
       const pts = pointsRef.current
       const sel = selectedRef.current
       const tmap = tleByNoradRef.current
       const mode = vizModeRef.current
+      const hasSel = sel.size > 0
 
       const colored = pts.map((p) => {
         const base = pointVizColor(mode, p, tmap.get(p.norad))
         return {
           ...p,
           color: sel.has(p.norad) ? '#ffffff' : base,
-          _selected: sel.has(p.norad),
         }
       })
 
-      globe.customLayerData(colored)
+      globe
+        .pointsData(colored)
+        .pointLat('lat')
+        .pointLng('lng')
+        .pointAltitude('alt')
+        .pointColor('color')
+        .pointRadius((d: any) => sel.has(d.norad) ? 0.22 : 0.12)
+        .pointResolution(4)
+        .pointsMerge(!hasSel)
 
       const pov = globe.pointOfView()
       const zoomed = pov.altitude < 0.38
@@ -285,8 +287,8 @@ export default function GlobeView(props: Partial<Props> = {}) {
     void loadTle()
     const tleIv = setInterval(() => void loadTle(), 50 * 60 * 1000)
 
-    // Click to select/deselect satellite
-    globe.onCustomLayerClick((d: any) => {
+    // ── FIX: onPointClick instead of onCustomLayerClick ──
+    globe.onPointClick((d: any) => {
       const next = new Set(selectedRef.current)
       if (next.has(d.norad)) next.delete(d.norad)
       else next.add(d.norad)
