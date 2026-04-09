@@ -6,12 +6,20 @@ import * as THREE from 'three'
 import axios from 'axios'
 import type { TleRecord, SatellitePoint, TelemetryPayload } from '@/app/lib/types'
 import { COUNTRIES_GEO_URL, EARTH_BUMP, EARTH_DAY, EARTH_NIGHT, STARFIELD } from '@/app/lib/constants'
-import { propagateAll, buildTelemetry } from '@/app/lib/satelliteUtils'
+import { buildTelemetry } from '@/app/lib/satelliteUtils'
 import { noradFromLine1 } from '@/app/lib/tleParser'
 import { filterTlesByMenu, type MenuFilter } from '@/app/lib/satelliteFilters'
-import { pointVizColor } from '@/app/lib/vizColors'
 import { sampleGroundTrackRing } from '@/app/lib/orbitMath'
 import type { GlobeApi } from './types'
+
+type WorkerResponse = {
+  timestamp: number
+  count: number
+  payload: Float32Array
+  norads: Uint32Array
+  names: string[]
+  colors: string[]
+}
 
 function countryOutlinesToPaths(geojson: any, alt = 0.0028): [number, number, number][][] {
   const paths: [number, number, number][][] = []
@@ -88,6 +96,7 @@ export default function GlobeView(props: Partial<Props> = {}) {
   vizModeRef.current = vizMode
   menuFilterRef.current = menuFilter
 
+  const workerRef = useRef<Worker | null>(null)
   const propagateRef = useRef<() => void>(() => {})
 
   const rootRef = useRef<HTMLDivElement>(null)
@@ -122,13 +131,30 @@ export default function GlobeView(props: Partial<Props> = {}) {
     const globe = new (GlobeGL as any)(el) as GlobeInstance
     globeRef.current = globe
 
-    const tlesRef: { current: TleRecord[] } = { current: [] }
-    const tleByNoradRef = { current: new Map<number, TleRecord>() }
-    const pointsRef: { current: SatellitePoint[] } = { current: [] }
-    const borderPathsRef: { current: [number, number, number][][] } = { current: [] }
-    const simTimeRef = { current: new Date() }
-    const lastWallRef = { current: performance.now() }
-    const lastPropRef = { current: performance.now() }
+    const worker = new Worker('/tleWorker.js')
+    workerRef.current = worker
+    worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
+      const { timestamp, count, payload, norads, names, colors } = e.data
+      const pts: SatellitePoint[] = []
+      for (let i = 0; i < count; i++) {
+        const base = i * 5
+        pts.push({
+          norad: norads[i],
+          name: names[i],
+          lat: payload[base],
+          lng: payload[base + 1],
+          alt: payload[base + 2],
+          altKm: payload[base + 3],
+          inclination: payload[base + 4],
+          baseColor: colors[i],
+        })
+      }
+      pointsRef.current = pts
+      onPointsUpdateRef.current(pts)
+      onTelemetryRef.current(buildTelemetry(pts, tlesRef.current))
+      onUtcRef.current(formatUtc(new Date(timestamp)))
+      pushPointsRef.current()
+    }
 
     globe
       .globeImageUrl(EARTH_DAY)
@@ -243,25 +269,15 @@ export default function GlobeView(props: Partial<Props> = {}) {
     function pushPointsToGlobe() {
       const pts = pointsRef.current
       const sel = selectedRef.current
-      const tmap = tleByNoradRef.current
-      const mode = vizModeRef.current
 
-      // Precompute color once per point here and attach to the data object.
-      // This avoids recomputing color inside customThreeObjectUpdate every frame.
-      const colored = pts.map((p) => {
-        const base = pointVizColor(mode, p, tmap.get(p.norad))
-        return {
-          ...p,
-          color: sel.has(p.norad) ? '#ffffff' : base,
-          _selected: sel.has(p.norad),
-        }
-      })
+      // Update colors in place for selection changes to avoid recreating objects
+      for (const p of pts) {
+        p.color = sel.has(p.norad) ? '#ffffff' : p.baseColor
+        p._selected = sel.has(p.norad)
+      }
 
-      // Keep the pointsRef updated with the colored objects
-      pointsRef.current = colored
-
-      // Provide the pre-colored data to globe.gl in one call
-      globe.customLayerData(colored)
+      // Provide the updated data to globe.gl (same array reference to avoid recreation)
+      globe.customLayerData(pts)
 
       // Labels: only compute a sparse set when zoomed in
       const pov = globe.pointOfView()
@@ -297,17 +313,9 @@ export default function GlobeView(props: Partial<Props> = {}) {
     // --- Propagation function and plumbing ---
     function propagate() {
       const tles = tlesRef.current
-      if (!tles.length) return
+      if (!tles.length || !workerRef.current) return
       const filtered = filterTlesByMenu(tles, menuFilterRef.current)
-      const pts = propagateAll(filtered, simTimeRef.current).map((p) => ({
-        ...p,
-        color: pointVizColor(vizModeRef.current, p, tleByNoradRef.current.get(p.norad)),
-      }))
-      pointsRef.current = pts
-      onPointsUpdateRef.current(pts)
-      onTelemetryRef.current(buildTelemetry(pts, filtered))
-      onUtcRef.current(formatUtc(simTimeRef.current))
-      pushPointsRef.current()
+      workerRef.current.postMessage({ tles: filtered, timestamp: simTimeRef.current.getTime(), vizMode: vizModeRef.current })
     }
     propagateRef.current = propagate
 
@@ -410,6 +418,7 @@ export default function GlobeView(props: Partial<Props> = {}) {
       cancelAnimationFrame(raf)
       clearInterval(tleIv)
       window.removeEventListener('resize', onResize)
+      workerRef.current?.terminate()
       try {
         globeRef.current?.renderer()?.dispose()
       } catch (e) {}
