@@ -14,15 +14,15 @@ type WorkerResponse = {
   payload: Float32Array
   norads: Uint32Array
   names: string[]
-  colors: number[]  // FIX: was string[], now number[] for fast setHex()
+  colors: string[]
 }
 
-function inclinationColor(i: number): number {
-  if (i < 30) return 0xe63946
-  if (i < 60) return 0xff8c00
-  if (i < 90) return 0xffd700
-  if (i < 120) return 0x2ecc40
-  return 0x4488ff
+function inclinationColor(i: number): string {
+  if (i < 30) return '#e63946'
+  if (i < 60) return '#ff8c00'
+  if (i < 90) return '#ffd700'
+  if (i < 120) return '#2ecc40'
+  return '#4488ff'
 }
 
 function constellationLabel(name: string): string {
@@ -39,35 +39,35 @@ function constellationLabel(name: string): string {
   return 'Other'
 }
 
-const CONSTELLATION_HEX: Record<string, number> = {
-  Starlink:   0x4488ff,
-  Kuiper:     0xff8c00,
-  Oneweb:     0x7cfc7c,
-  Iridium:    0xffd700,
-  GPS:        0xe63946,
-  Globalstar: 0xff44ff,
-  Galileo:    0x44ffff,
-  Glonass:    0xfa8072,
-  Beidou:     0xdaa520,
-  Qianfan:    0xa855f7,
-  Other:      0x9ca3af,
+const CONSTELLATION_HEX: Record<string, string> = {
+  Starlink: '#4488ff',
+  Kuiper: '#ff8c00',
+  Oneweb: '#7cfc7c',
+  Iridium: '#ffd700',
+  GPS: '#e63946',
+  Globalstar: '#ff44ff',
+  Galileo: '#44ffff',
+  Glonass: '#fa8072',
+  Beidou: '#daa520',
+  Qianfan: '#a855f7',
+  Other: '#9ca3af',
 }
 
-function altitudeColor(km: number): number {
-  if (km < 400)   return 0xe63946
-  if (km < 1000)  return 0xff8c00
-  if (km < 2000)  return 0xffd700
-  if (km < 35786) return 0x2ecc40
-  if (km < 35888) return 0x4488ff
-  return 0x8844ff
+function altitudeColor(km: number): string {
+  if (km < 400) return '#e63946'
+  if (km < 1000) return '#ff8c00'
+  if (km < 2000) return '#ffd700'
+  if (km < 35786) return '#2ecc40'
+  if (km < 35888) return '#4488ff'
+  return '#8844ff'
 }
 
-const HW_COLORS: Record<string, number> = {
-  'v2 mini':     0x22c55e,
-  'v1.5':        0x3b82f6,
-  'v1.0':        0xe63946,
-  'v2 mini d2c': 0xf59e0b,
-  Unknown:       0x9ca3af,
+const HW_COLORS: Record<string, string> = {
+  'v2 mini': '#22c55e',
+  'v1.5': '#3b82f6',
+  'v1.0': '#e63946',
+  'v2 mini d2c': '#f59e0b',
+  Unknown: '#9ca3af',
 }
 
 function hardwareBucket(norad: number, name: string): string {
@@ -78,48 +78,66 @@ function hardwareBucket(norad: number, name: string): string {
   return 'Unknown'
 }
 
-function reentryColor(km: number): number {
-  if (km < 180) return 0xe63946
-  if (km < 200) return 0xff4500
-  if (km < 220) return 0xff8c00
-  return 0x52525b
+function reentryColor(km: number): string {
+  if (km < 180) return '#e63946'
+  if (km < 200) return '#ff4500'
+  if (km < 220) return '#ff8c00'
+  return '#52525b'
 }
 
-const FCC_PALETTE: number[] = [
-  0x4488ff, 0xff8c00, 0xa855f7, 0x22c55e, 0xec4899,
-  0xf87171, 0x22d3ee, 0xeab308, 0x86efac, 0xea580c,
-  0x93c5fd, 0xfdba74, 0xca8a04, 0x14b8a6, 0xffffff,
+const FCC_PALETTE = [
+  '#4488ff',
+  '#ff8c00',
+  '#a855f7',
+  '#22c55e',
+  '#ec4899',
+  '#f87171',
+  '#22d3ee',
+  '#eab308',
+  '#86efac',
+  '#ea580c',
+  '#93c5fd',
+  '#fdba74',
+  '#ca8a04',
+  '#14b8a6',
+  '#ffffff',
 ]
 
-const ORBIT_HEX: Record<string, number> = {
-  Molniya:        0xec4899,
-  'Semi-Sync':    0xff8c00,
-  OneWeb:         0x22d3ee,
-  GNSS:           0xffd700,
-  'Sun-Sync':     0xca8a04,
-  GEO:            0xe63946,
-  GSO:            0xa855f7,
-  'HEO Elliptical': 0x4ade80,
-  HEO:            0x86efac,
-  Polar:          0x93c5fd,
-  Retrograde:     0xc026d3,
-  Elliptical:     0x71717a,
-  Circular:       0xbbf7d0,
-  MEO:            0x06b6d4,
-  LEO:            0x3b82f6,
-  Unknown:        0xffffff,
+const ORBIT_HEX: Record<string, string> = {
+  Molniya: '#ec4899',
+  'Semi-Sync': '#ff8c00',
+  OneWeb: '#22d3ee',
+  GNSS: '#ffd700',
+  'Sun-Sync': '#ca8a04',
+  GEO: '#e63946',
+  GSO: '#a855f7',
+  'HEO Elliptical': '#4ade80',
+  HEO: '#86efac',
+  Polar: '#93c5fd',
+  Retrograde: '#c026d3',
+  Elliptical: '#71717a',
+  Circular: '#bbf7d0',
+  MEO: '#06b6d4',
+  LEO: '#3b82f6',
+  Unknown: '#ffffff',
 }
 
-// FIX: removed meanMotionFromSatrec() — it was calling twoline2satrec() a second time
-// inside the loop. Now satrec is passed directly from propagateBatch.
-function orbitLabelForViz(tle: TleRecord, p: any, satrec: any): string {
+function meanMotionFromSatrec(tle: TleRecord): number {
+  try {
+    const s = satellite.twoline2satrec(tle.TLE_LINE1, tle.TLE_LINE2)
+    const periodMin = s.no > 1e-9 ? (2 * Math.PI) / s.no : 1440
+    return 1440 / periodMin
+  } catch {
+    return 0
+  }
+}
+
+function orbitLabelForViz(tle: TleRecord, p: any): string {
   const u = tle.OBJECT_NAME.toUpperCase()
   if (u.includes('ONEWEB')) return 'OneWeb'
   if (/GPS|NAVSTAR|GLONASS|GALILEO|BEIDOU|BEI DOU/.test(u)) return 'GNSS'
 
-  // FIX: use already-computed satrec — no second twoline2satrec call
-  const periodMin = satrec.no > 1e-9 ? (2 * Math.PI) / satrec.no : 1440
-  const n = 1440 / periodMin
+  const n = meanMotionFromSatrec(tle)
   const inc = p.inclination
   if (!Number.isFinite(n) || n <= 0) return 'Unknown'
   if (n < 1.05) return 'GSO'
@@ -136,30 +154,29 @@ function orbitLabelForViz(tle: TleRecord, p: any, satrec: any): string {
   return 'Elliptical'
 }
 
-// FIX: colorCache now stores number instead of string
-const colorCache = new Map<string, number>()
+const colorCache = new Map<string, string>()
 
-// FIX: returns number instead of string; satrec passed in to avoid double-parse
-function pointVizColor(mode: number, p: any, tle: TleRecord, satrec: any): number {
+function pointVizColor(mode: number, p: any, tle: TleRecord): string {
   let key: string | null = null
   switch (mode) {
-    case 0:
+    case 0: // inclination
       key = `${p.norad}-inc-${Math.round(p.inclination * 10) / 10}`
       break
-    case 1:
+    case 1: // constellation
       key = `${p.norad}-const-${p.name}`
       break
-    case 3:
+    case 3: // hardware
       key = `${p.norad}-hw-${p.name}`
       break
-    case 5:
+    case 5: // FCC
       key = `${p.norad}-fcc`
       break
+    // others depend on position or tle, don't cache
   }
   if (key && colorCache.has(key)) {
     return colorCache.get(key)!
   }
-  let color: number
+  let color: string
   switch (mode) {
     case 0:
       color = inclinationColor(p.inclination)
@@ -184,8 +201,7 @@ function pointVizColor(mode: number, p: any, tle: TleRecord, satrec: any): numbe
       color = FCC_PALETTE[p.norad % FCC_PALETTE.length]
       break
     case 6: {
-      // FIX: pass satrec so orbitLabelForViz doesn't re-parse TLE
-      const lab = orbitLabelForViz(tle, p, satrec)
+      const lab = orbitLabelForViz(tle, p)
       color = ORBIT_HEX[lab] ?? ORBIT_HEX.Unknown
       break
     }
@@ -203,7 +219,7 @@ function propagateBatch(tles: TleRecord[], when: Date, vizMode: number): WorkerR
   const payload = new Float32Array(count * 5)
   const norads = new Uint32Array(count)
   const names: string[] = new Array(count)
-  const colors: number[] = new Array(count)  // FIX: number[]
+  const colors: string[] = new Array(count)
   let valid = 0
 
   for (let i = 0; i < count; i++) {
@@ -223,21 +239,16 @@ function propagateBatch(tles: TleRecord[], when: Date, vizMode: number): WorkerR
       if (!Number.isFinite(lat) || !Number.isFinite(lng) || alt < 0) continue
 
       const inclination = (satrec.inclo * 180) / Math.PI
-      const norad = noradFromLine1(entry.TLE_LINE1)
-
-      // FIX: build p first, THEN compute color using p (was backwards before — color was undefined)
-      const p = { norad, name: entry.OBJECT_NAME, lat, lng, alt, altKm, inclination }
-      const color = pointVizColor(vizMode, p, entry, satrec)  // FIX: pass satrec
-
+      const p = { norad: noradFromLine1(entry.TLE_LINE1), name: entry.OBJECT_NAME, lat, lng, alt, altKm, inclination, baseColor: color }
       const base = valid * 5
-      payload[base]     = lat
+      payload[base] = lat
       payload[base + 1] = lng
       payload[base + 2] = alt
       payload[base + 3] = altKm
       payload[base + 4] = inclination
-      norads[valid] = norad
-      names[valid]  = p.name
-      colors[valid] = color  // FIX: now correctly assigned number
+      norads[valid] = p.norad
+      names[valid] = p.name
+      colors[valid] = color
       valid += 1
     } catch {
       continue
