@@ -18,7 +18,7 @@ type WorkerResponse = {
   payload: Float32Array
   norads: Uint32Array
   names: string[]
-  colors: number[]  // FIX: was string[], now number[] to match worker
+  colors: number[]
 }
 
 function countryOutlinesToPaths(geojson: any, alt = 0.0028): [number, number, number][][] {
@@ -106,6 +106,15 @@ export default function GlobeView(props: Partial<Props> = {}) {
   const pushPointsRef = useRef<() => void>(() => {})
   const speedRef = useRef(1)
 
+  // FIX: all missing refs that were used inside useEffect but never declared
+  const pointsRef = useRef<SatellitePoint[]>([])
+  const tlesRef = useRef<TleRecord[]>([])
+  const tleByNoradRef = useRef<Map<number, TleRecord>>(new Map())
+  const simTimeRef = useRef<Date>(new Date())
+  const lastWallRef = useRef<number>(0)
+  const lastPropRef = useRef<number>(0)
+  const borderPathsRef = useRef<[number, number, number][][]>([])
+
   const onTelemetryRef = useRef(onTelemetry)
   const onTleLoadedRef = useRef(onTleLoaded)
   const onPointsUpdateRef = useRef(onPointsUpdate)
@@ -128,6 +137,10 @@ export default function GlobeView(props: Partial<Props> = {}) {
     const el = rootRef.current
     if (!el) return
 
+    // initialise timing refs inside effect (safe for SSR — no window/performance at module level)
+    lastWallRef.current = performance.now()
+    lastPropRef.current = performance.now()
+
     const globe = new (GlobeGL as any)(el) as GlobeInstance
     globeRef.current = globe
 
@@ -146,7 +159,7 @@ export default function GlobeView(props: Partial<Props> = {}) {
           alt: payload[base + 2],
           altKm: payload[base + 3],
           inclination: payload[base + 4],
-          baseColor: colors[i],  // FIX: now a number, not a string
+          baseColor: colors[i],
         })
       }
       pointsRef.current = pts
@@ -174,35 +187,30 @@ export default function GlobeView(props: Partial<Props> = {}) {
         return new THREE.Mesh(geo, mat)
       })
       .customThreeObjectUpdate((obj: any, d: any) => {
-        // FIX: use hex number (0xffffff) instead of string ('#ffffff')
-        // FIX: use setHex() instead of set(string) — much faster, no string parsing
         const desiredColor: number = d._selected ? 0xffffff : (d.color ?? 0xffffff)
+        const ud: any = obj.userData || (obj.userData = {})
 
-        const ud = obj.userData || (obj.userData = {})
-
-        // Only update material color when it actually changed
         if (ud._lastColor !== desiredColor) {
-          obj.material.color.setHex(desiredColor)  // FIX: setHex(number) is fast
+          obj.material.color.setHex(desiredColor)
           ud._lastColor = desiredColor
         }
 
-        // Only update scale when selection state changes
         if (ud._lastSelected !== !!d._selected) {
           obj.scale.setScalar(d._selected ? 1.5 : 1)
           ud._lastSelected = !!d._selected
         }
 
-        // Update position every frame (cheap)
         const coords: any = globe.getCoords(d.lat, d.lng, d.alt)
         if (Array.isArray(coords)) {
           obj.position.set(coords[0], coords[1], coords[2])
         } else if (coords && typeof coords === 'object') {
-          const x = (coords.x ?? (coords as any)[0] ?? coords.lat ?? 0) as number
-          const y = (coords.y ?? (coords as any)[1] ?? coords.lng ?? 0) as number
-          const z = (coords.z ?? (coords as any)[2] ?? coords.alt ?? 0) as number
+          const x = (coords.x ?? (coords as any)[0] ?? 0) as number
+          const y = (coords.y ?? (coords as any)[1] ?? 0) as number
+          const z = (coords.z ?? (coords as any)[2] ?? 0) as number
           obj.position.set(x, y, z)
         }
       })
+
     globe.pointOfView({ altitude: 2.25 })
     globe.controls().autoRotate = true
     globe.controls().autoRotateSpeed = 0.28
@@ -253,7 +261,6 @@ export default function GlobeView(props: Partial<Props> = {}) {
       const pts = pointsRef.current
       const sel = selectedRef.current
 
-      // FIX: use hex number 0xffffff instead of string '#ffffff'
       for (const p of pts) {
         p.color = sel.has(p.norad) ? 0xffffff : p.baseColor
         p._selected = sel.has(p.norad)
@@ -261,7 +268,6 @@ export default function GlobeView(props: Partial<Props> = {}) {
 
       globe.customLayerData(pts)
 
-      // Labels: only compute a sparse set when zoomed in
       const pov = globe.pointOfView()
       const zoomed = pov.altitude < 0.38
       if (zoomed && pts.length) {
@@ -296,7 +302,11 @@ export default function GlobeView(props: Partial<Props> = {}) {
       const tles = tlesRef.current
       if (!tles.length || !workerRef.current) return
       const filtered = filterTlesByMenu(tles, menuFilterRef.current)
-      workerRef.current.postMessage({ tles: filtered, timestamp: simTimeRef.current.getTime(), vizMode: vizModeRef.current })
+      workerRef.current.postMessage({
+        tles: filtered,
+        timestamp: simTimeRef.current.getTime(),
+        vizMode: vizModeRef.current,
+      })
     }
     propagateRef.current = propagate
 
@@ -417,6 +427,7 @@ export default function GlobeView(props: Partial<Props> = {}) {
     if (hemi) hemi.intensity = ui.terminatorOn ? 1.25 : 1.4
     globe.controls().autoRotate = !ui.animPaused
     rebuildPathsRef.current()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ui.graticulesOn, ui.starfieldOn, ui.dayTexture, ui.bordersOn, ui.orbitTrails, ui.terminatorOn, ui.animPaused])
 
   useEffect(() => {

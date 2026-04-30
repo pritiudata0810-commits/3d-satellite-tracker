@@ -12,7 +12,9 @@ export type SatellitePoint = {
   alt: number
   altKm: number
   inclination: number
-  color: string
+  baseColor: number   // hex int e.g. 0xff8c00
+  color?: number      // overridden per-frame (selection highlight etc.)
+  _selected?: boolean
 }
 
 export type TelemetryPayload = {
