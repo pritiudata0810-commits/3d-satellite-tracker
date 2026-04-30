@@ -2,12 +2,13 @@ import * as satellite from 'satellite.js'
 import type { SatellitePoint, TelemetryPayload, TleRecord } from './types'
 import { noradFromLine1 } from './tleParser'
 
-export function inclinationColor(i: number): string {
-  if (i < 30) return '#e63946'
-  if (i < 60) return '#ff8c00'
-  if (i < 90) return '#ffd700'
-  if (i < 120) return '#2ecc40'
-  return '#4488ff'
+// FIX: returns number (hex int) instead of string
+export function inclinationColor(i: number): number {
+  if (i < 30) return 0xe63946
+  if (i < 60) return 0xff8c00
+  if (i < 90) return 0xffd700
+  if (i < 120) return 0x2ecc40
+  return 0x4488ff
 }
 
 export function propagateOne(tle: TleRecord, when: Date): SatellitePoint | null {
@@ -32,7 +33,7 @@ export function propagateOne(tle: TleRecord, when: Date): SatellitePoint | null 
       alt,
       altKm: Math.round(altKm),
       inclination: Math.round(inclination * 10) / 10,
-      color: inclinationColor(inclination),
+      baseColor: inclinationColor(inclination), // FIX: was 'color', now 'baseColor'; value is number
     }
   } catch {
     return null
