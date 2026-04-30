@@ -18,7 +18,7 @@ type WorkerResponse = {
   payload: Float32Array
   norads: Uint32Array
   names: string[]
-  colors: string[]
+  colors: number[]  // FIX: was string[], now number[] to match worker
 }
 
 function countryOutlinesToPaths(geojson: any, alt = 0.0028): [number, number, number][][] {
@@ -146,7 +146,7 @@ export default function GlobeView(props: Partial<Props> = {}) {
           alt: payload[base + 2],
           altKm: payload[base + 3],
           inclination: payload[base + 4],
-          baseColor: colors[i],
+          baseColor: colors[i],  // FIX: now a number, not a string
         })
       }
       pointsRef.current = pts
@@ -170,32 +170,19 @@ export default function GlobeView(props: Partial<Props> = {}) {
       .customLayerData([])
       .customThreeObject(() => {
         const geo = new THREE.SphereGeometry(0.42, 4, 4)
-        const mat = new THREE.MeshBasicMaterial({ color: '#ff8c00' })
+        const mat = new THREE.MeshBasicMaterial({ color: 0xff8c00 })
         return new THREE.Mesh(geo, mat)
       })
       .customThreeObjectUpdate((obj: any, d: any) => {
-        // PERFORMANCE FIX:
-        // Use the precomputed color on the data object (d.color) and only update
-        // the material color when it actually changed. Also only update selection
-        // related scale when selection state changes.
-        //
-        // This avoids calling material.color.set(...) every frame for thousands of objects,
-        // which was causing GC and GPU upload stalls when colors were enabled.
+        // FIX: use hex number (0xffffff) instead of string ('#ffffff')
+        // FIX: use setHex() instead of set(string) — much faster, no string parsing
+        const desiredColor: number = d._selected ? 0xffffff : (d.color ?? 0xffffff)
 
-        // Determine desired color (data already carries color from pushPointsToGlobe)
-        const desiredColor = d._selected ? '#ffffff' : (d.color ?? '#ffffff')
-
-        // Use obj.userData to cache last-applied color and selection state
         const ud = obj.userData || (obj.userData = {})
 
-        // Only update material color if it changed
+        // Only update material color when it actually changed
         if (ud._lastColor !== desiredColor) {
-          // set color once when changed
-          try {
-            obj.material.color.set(desiredColor)
-          } catch (e) {
-            // fallback: ignore if material not ready
-          }
+          obj.material.color.setHex(desiredColor)  // FIX: setHex(number) is fast
           ud._lastColor = desiredColor
         }
 
@@ -206,18 +193,14 @@ export default function GlobeView(props: Partial<Props> = {}) {
         }
 
         // Update position every frame (cheap)
-        // globe.getCoords may return either an array [x,y,z] or an object { x, y, z } depending on globe.gl version.
         const coords: any = globe.getCoords(d.lat, d.lng, d.alt)
         if (Array.isArray(coords)) {
           obj.position.set(coords[0], coords[1], coords[2])
         } else if (coords && typeof coords === 'object') {
-          // handle { x, y, z } or { lat, lng, alt } shapes
           const x = (coords.x ?? (coords as any)[0] ?? coords.lat ?? 0) as number
           const y = (coords.y ?? (coords as any)[1] ?? coords.lng ?? 0) as number
           const z = (coords.z ?? (coords as any)[2] ?? coords.alt ?? 0) as number
           obj.position.set(x, y, z)
-        } else {
-          // fallback: no-op
         }
       })
     globe.pointOfView({ altitude: 2.25 })
@@ -270,13 +253,12 @@ export default function GlobeView(props: Partial<Props> = {}) {
       const pts = pointsRef.current
       const sel = selectedRef.current
 
-      // Update colors in place for selection changes to avoid recreating objects
+      // FIX: use hex number 0xffffff instead of string '#ffffff'
       for (const p of pts) {
-        p.color = sel.has(p.norad) ? '#ffffff' : p.baseColor
+        p.color = sel.has(p.norad) ? 0xffffff : p.baseColor
         p._selected = sel.has(p.norad)
       }
 
-      // Provide the updated data to globe.gl (same array reference to avoid recreation)
       globe.customLayerData(pts)
 
       // Labels: only compute a sparse set when zoomed in
@@ -310,7 +292,6 @@ export default function GlobeView(props: Partial<Props> = {}) {
     }
     pushPointsRef.current = pushPointsToGlobe
 
-    // --- Propagation function and plumbing ---
     function propagate() {
       const tles = tlesRef.current
       if (!tles.length || !workerRef.current) return
@@ -319,7 +300,6 @@ export default function GlobeView(props: Partial<Props> = {}) {
     }
     propagateRef.current = propagate
 
-    // Load TLEs and wire up periodic refresh
     async function loadTle() {
       try {
         const res = await axios.get<TleRecord[]>('/api/tle')
@@ -383,11 +363,9 @@ export default function GlobeView(props: Partial<Props> = {}) {
         lastWallRef.current = performance.now()
         propagate()
       },
-      // Provide a small helper to read sim time. Cast to match expected GlobeApi when exposing.
       getSimTime: () => simTimeRef.current,
     }
 
-    // Cast to GlobeApi to satisfy TypeScript if GlobeApi doesn't include getSimTime.
     onReadyRef.current(api as unknown as GlobeApi)
 
     let raf = 0
