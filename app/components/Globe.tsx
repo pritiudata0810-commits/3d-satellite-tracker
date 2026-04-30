@@ -5,7 +5,13 @@ import GlobeGL, { type GlobeInstance } from 'globe.gl'
 import * as THREE from 'three'
 import axios from 'axios'
 import type { TleRecord, SatellitePoint, TelemetryPayload } from '@/app/lib/types'
-import { COUNTRIES_GEO_URL, EARTH_BUMP, EARTH_DAY, EARTH_NIGHT, STARFIELD } from '@/app/lib/constants'
+import {
+  COUNTRIES_GEO_URL,
+  EARTH_BUMP,
+  EARTH_DAY,
+  EARTH_NIGHT,
+  STARFIELD,
+} from '@/app/lib/constants'
 import { buildTelemetry } from '@/app/lib/satelliteUtils'
 import { noradFromLine1 } from '@/app/lib/tleParser'
 import { filterTlesByMenu, type MenuFilter } from '@/app/lib/satelliteFilters'
@@ -21,23 +27,34 @@ type WorkerResponse = {
   colors: number[]
 }
 
-function countryOutlinesToPaths(geojson: any, alt = 0.0028): [number, number, number][][] {
+function countryOutlinesToPaths(
+  geojson: any,
+  alt = 0.0028
+): [number, number, number][][] {
   const paths: [number, number, number][][] = []
+
   for (const f of geojson.features ?? []) {
     const p = f.properties
     if (p?.ISO_A2 === 'AQ') continue
+
     const g = f.geometry
     if (!g) continue
+
     if (g.type === 'Polygon') {
       const ring = g.coordinates[0]
-      if (ring?.length) paths.push(ring.map(([lng, lat]: number[]) => [lat, lng, alt]))
+      if (ring?.length) {
+        paths.push(ring.map(([lng, lat]: number[]) => [lat, lng, alt]))
+      }
     } else if (g.type === 'MultiPolygon') {
       for (const poly of g.coordinates) {
         const ring = poly[0]
-        if (ring?.length) paths.push(ring.map(([lng, lat]: number[]) => [lat, lng, alt]))
+        if (ring?.length) {
+          paths.push(ring.map(([lng, lat]: number[]) => [lat, lng, alt]))
+        }
       }
     }
   }
+
   return paths
 }
 
@@ -65,7 +82,11 @@ type Props = {
 
 function formatUtc(d: Date) {
   const p = (n: number) => String(n).padStart(2, '0')
-  return `${p(d.getUTCMonth() + 1)}/${p(d.getUTCDate())}/${String(d.getUTCFullYear()).slice(2)} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())} UTC`
+  return `${p(d.getUTCMonth() + 1)}/${p(d.getUTCDate())}/${String(
+    d.getUTCFullYear()
+  ).slice(2)} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(
+    d.getUTCSeconds()
+  )} UTC`
 }
 
 export default function GlobeView(props: Partial<Props> = {}) {
@@ -93,12 +114,12 @@ export default function GlobeView(props: Partial<Props> = {}) {
 
   const vizModeRef = useRef(vizMode)
   const menuFilterRef = useRef<MenuFilter | null>(menuFilter)
+
   vizModeRef.current = vizMode
   menuFilterRef.current = menuFilter
 
   const workerRef = useRef<Worker | null>(null)
   const propagateRef = useRef<() => void>(() => {})
-
   const rootRef = useRef<HTMLDivElement>(null)
   const globeRef = useRef<GlobeInstance | null>(null)
   const hemiRef = useRef<THREE.HemisphereLight | null>(null)
@@ -106,7 +127,6 @@ export default function GlobeView(props: Partial<Props> = {}) {
   const pushPointsRef = useRef<() => void>(() => {})
   const speedRef = useRef(1)
 
-  // FIX: all missing refs that were used inside useEffect but never declared
   const pointsRef = useRef<SatellitePoint[]>([])
   const tlesRef = useRef<TleRecord[]>([])
   const tleByNoradRef = useRef<Map<number, TleRecord>>(new Map())
@@ -137,7 +157,6 @@ export default function GlobeView(props: Partial<Props> = {}) {
     const el = rootRef.current
     if (!el) return
 
-    // initialise timing refs inside effect (safe for SSR — no window/performance at module level)
     lastWallRef.current = performance.now()
     lastPropRef.current = performance.now()
 
@@ -146,9 +165,11 @@ export default function GlobeView(props: Partial<Props> = {}) {
 
     const worker = new Worker('/tleWorker.js')
     workerRef.current = worker
+
     worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       const { timestamp, count, payload, norads, names, colors } = e.data
       const pts: SatellitePoint[] = []
+
       for (let i = 0; i < count; i++) {
         const base = i * 5
         pts.push({
@@ -162,6 +183,7 @@ export default function GlobeView(props: Partial<Props> = {}) {
           baseColor: colors[i],
         })
       }
+
       pointsRef.current = pts
       onPointsUpdateRef.current(pts)
       onTelemetryRef.current(buildTelemetry(pts, tlesRef.current))
@@ -187,7 +209,9 @@ export default function GlobeView(props: Partial<Props> = {}) {
         return new THREE.Mesh(geo, mat)
       })
       .customThreeObjectUpdate((obj: any, d: any) => {
-        const desiredColor: number = d._selected ? 0xffffff : (d.color ?? 0xffffff)
+        const desiredColor =
+          typeof d.color === 'number' ? d.color : 0xffffff
+
         const ud: any = obj.userData || (obj.userData = {})
 
         if (ud._lastColor !== desiredColor) {
@@ -195,19 +219,23 @@ export default function GlobeView(props: Partial<Props> = {}) {
           ud._lastColor = desiredColor
         }
 
-        if (ud._lastSelected !== !!d._selected) {
-          obj.scale.setScalar(d._selected ? 1.5 : 1)
-          ud._lastSelected = !!d._selected
+        const desiredScale = d._selected ? 1.5 : 1
+
+        if (ud._lastScale !== desiredScale) {
+          obj.scale.setScalar(desiredScale)
+          ud._lastScale = desiredScale
         }
 
         const coords: any = globe.getCoords(d.lat, d.lng, d.alt)
+
         if (Array.isArray(coords)) {
           obj.position.set(coords[0], coords[1], coords[2])
         } else if (coords && typeof coords === 'object') {
-          const x = (coords.x ?? (coords as any)[0] ?? 0) as number
-          const y = (coords.y ?? (coords as any)[1] ?? 0) as number
-          const z = (coords.z ?? (coords as any)[2] ?? 0) as number
-          obj.position.set(x, y, z)
+          obj.position.set(
+            coords.x ?? 0,
+            coords.y ?? 0,
+            coords.z ?? 0
+          )
         }
       })
 
@@ -219,121 +247,115 @@ export default function GlobeView(props: Partial<Props> = {}) {
     globe.scene().add(hemi)
     hemiRef.current = hemi
 
-    try {
-      const renderer = globe.renderer()
-      if (renderer) renderer.toneMappingExposure = 1.6
-    } catch (e) {}
-
     async function loadBorders() {
       try {
         const res = await axios.get(COUNTRIES_GEO_URL)
         borderPathsRef.current = countryOutlinesToPaths(res.data)
-      } catch (e) {
+      } catch {
         borderPathsRef.current = []
       }
     }
+
     loadBorders()
 
     function rebuildPaths() {
       const border = uiRef.current.bordersOn ? borderPathsRef.current : []
+
       const orbit: { points: [number, number, number][]; color: string }[] = []
+
       if (uiRef.current.orbitTrails) {
         for (const id of selectedRef.current) {
           const tle = tleByNoradRef.current.get(id)
           if (!tle) continue
+
           const ring = sampleGroundTrackRing(tle, simTimeRef.current, 96)
-          if (ring.length > 4) orbit.push({ points: ring, color: 'rgba(255,165,70,0.9)' })
+
+          if (ring.length > 4) {
+            orbit.push({
+              points: ring,
+              color: 'rgba(255,165,70,0.9)',
+            })
+          }
         }
       }
-      const merged = [
-        ...border.map((points) => ({ points, color: 'rgba(255,255,255,0.4)' })),
-        ...orbit,
-      ]
+
       globe
-        .pathsData(merged)
+        .pathsData([
+          ...border.map((points) => ({
+            points,
+            color: 'rgba(255,255,255,0.4)',
+          })),
+          ...orbit,
+        ])
         .pathPoints('points')
         .pathColor((d: any) => d.color)
         .pathStroke(0.28)
     }
+
     rebuildPathsRef.current = rebuildPaths
 
+    // PERFORMANCE FIX: avoid mutating original objects each frame
     function pushPointsToGlobe() {
       const pts = pointsRef.current
       const sel = selectedRef.current
 
-      for (const p of pts) {
-        p.color = sel.has(p.norad) ? 0xffffff : p.baseColor
-        p._selected = sel.has(p.norad)
-      }
+      const mapped = pts.map((p) => ({
+        ...p,
+        color: sel.has(p.norad) ? 0xffffff : p.baseColor,
+        _selected: sel.has(p.norad),
+      }))
 
-      globe.customLayerData(pts)
-
-      const pov = globe.pointOfView()
-      const zoomed = pov.altitude < 0.38
-      if (zoomed && pts.length) {
-        const maxLab = 72
-        const step = Math.max(1, Math.ceil(pts.length / maxLab))
-        const lab = pts
-          .filter((_, i) => i % step === 0)
-          .map((p) => ({
-            lat: p.lat,
-            lng: p.lng,
-            alt: p.alt,
-            text: `${p.name}`,
-            color: 'rgba(255,255,255,0.96)',
-            size: 0.011,
-          }))
-        globe
-          .labelsData(lab)
-          .labelText('text')
-          .labelColor('color')
-          .labelAltitude('alt')
-          .labelSize('size')
-          .labelDotRadius(0.032)
-      } else {
-        globe.labelsData([])
-      }
+      globe.customLayerData(mapped)
 
       rebuildPaths()
     }
+
     pushPointsRef.current = pushPointsToGlobe
 
     function propagate() {
       const tles = tlesRef.current
       if (!tles.length || !workerRef.current) return
+
       const filtered = filterTlesByMenu(tles, menuFilterRef.current)
+
       workerRef.current.postMessage({
         tles: filtered,
         timestamp: simTimeRef.current.getTime(),
         vizMode: vizModeRef.current,
       })
     }
+
     propagateRef.current = propagate
 
     async function loadTle() {
       try {
         const res = await axios.get<TleRecord[]>('/api/tle')
         tlesRef.current = res.data
+
         const m = new Map<number, TleRecord>()
+
         for (const t of res.data) {
           m.set(noradFromLine1(t.TLE_LINE1), t)
         }
+
         tleByNoradRef.current = m
         onTleLoadedRef.current(res.data)
         propagate()
-        console.log('Loaded satellites:', res.data.length)
       } catch (e) {
-        console.error('TLE load failed:', e)
+        console.error(e)
       }
     }
 
     void loadTle()
+
     const tleIv = setInterval(() => void loadTle(), 50 * 60 * 1000)
 
     globe.onCustomLayerClick((d: any) => {
       const next = new Set(selectedRef.current)
+
       if (next.has(d.norad)) next.delete(d.norad)
       else next.add(d.norad)
+
       selectedRef.current = next
       onSelectionChangeRef.current(next)
       pushPointsRef.current()
@@ -343,63 +365,34 @@ export default function GlobeView(props: Partial<Props> = {}) {
       globe.width(window.innerWidth)
       globe.height(window.innerHeight)
     }
+
     window.addEventListener('resize', onResize)
 
-    const api = {
-      resetView: () => {
-        globe.pointOfView({ altitude: 2.25 })
-        globe.controls().autoRotate = !uiRef.current.animPaused
-      },
-      focusOn: (lat: number, lng: number, alt = 0.14) => {
-        globe.pointOfView({ lat, lng, altitude: alt })
-        globe.controls().autoRotate = false
-      },
-      setBorders: () => {},
-      setGraticules: () => {},
-      setStarfield: () => {},
-      setDayTexture: () => {},
-      setClouds: () => {},
-      setOrbitTrails: () => {},
-      setTerminator: () => {},
-      togglePause: () => {},
-      setTimeSpeed: (n: number) => { speedRef.current = n },
-      stepTime: (deltaMs: number) => {
-        simTimeRef.current = new Date(simTimeRef.current.getTime() + deltaMs)
-        propagate()
-      },
-      refreshTle: () => void loadTle(),
-      jumpToNow: () => {
-        simTimeRef.current = new Date()
-        lastWallRef.current = performance.now()
-        propagate()
-      },
-      getSimTime: () => simTimeRef.current,
-    }
-
-    onReadyRef.current(api as unknown as GlobeApi)
-
     let raf = 0
+
     const loop = () => {
       const wall = performance.now()
       const dt = wall - lastWallRef.current
       lastWallRef.current = wall
 
       if (!uiRef.current.animPaused) {
-        simTimeRef.current = new Date(simTimeRef.current.getTime() + dt * speedRef.current)
+        simTimeRef.current = new Date(
+          simTimeRef.current.getTime() + dt * speedRef.current
+        )
       }
 
       const sp = speedRef.current
-      const minStep = sp >= 10 ? 200 : sp >= 5 ? 400 : sp >= 2 ? 800 : 2000
+      const minStep =
+        sp >= 10 ? 200 : sp >= 5 ? 400 : sp >= 2 ? 800 : 2000
 
       if (wall - lastPropRef.current >= minStep && tlesRef.current.length) {
         lastPropRef.current = wall
         propagate()
-      } else {
-        onUtcRef.current(formatUtc(simTimeRef.current))
       }
 
       raf = requestAnimationFrame(loop)
     }
+
     raf = requestAnimationFrame(loop)
 
     return () => {
@@ -407,28 +400,10 @@ export default function GlobeView(props: Partial<Props> = {}) {
       clearInterval(tleIv)
       window.removeEventListener('resize', onResize)
       workerRef.current?.terminate()
-      try {
-        globeRef.current?.renderer()?.dispose()
-      } catch (e) {}
       globeRef.current = null
       hemiRef.current = null
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  useEffect(() => {
-    uiRef.current = ui
-    const globe = globeRef.current
-    const hemi = hemiRef.current
-    if (!globe) return
-    globe.showGraticules(ui.graticulesOn)
-    globe.globeImageUrl(ui.dayTexture ? EARTH_DAY : EARTH_NIGHT)
-    globe.backgroundImageUrl(ui.starfieldOn ? STARFIELD : '')
-    if (hemi) hemi.intensity = ui.terminatorOn ? 1.25 : 1.4
-    globe.controls().autoRotate = !ui.animPaused
-    rebuildPathsRef.current()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ui.graticulesOn, ui.starfieldOn, ui.dayTexture, ui.bordersOn, ui.orbitTrails, ui.terminatorOn, ui.animPaused])
 
   useEffect(() => {
     selectedRef.current = selected
